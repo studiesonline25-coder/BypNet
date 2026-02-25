@@ -36,6 +36,7 @@ fun BrowserScreen() {
     var isLoading by remember { mutableStateOf(false) }
     var loadingProgress by remember { mutableIntStateOf(0) }
     var extractedCookies by remember { mutableStateOf("") }
+    var interceptedHeaders by remember { mutableStateOf("") }
     var showCookieDialog by remember { mutableStateOf(false) }
     var webView by remember { mutableStateOf<WebView?>(null) }
 
@@ -256,6 +257,31 @@ fun BrowserScreen() {
                             }
                             view?.title?.let { pageTitle = it }
                         }
+
+                        override fun shouldInterceptRequest(
+                            view: WebView?,
+                            request: WebResourceRequest?
+                        ): WebResourceResponse? {
+                            // Capture outgoing request headers for Imperva bypass
+                            request?.let { req ->
+                                val headers = req.requestHeaders
+                                if (headers != null && req.url.toString() == currentUrl) {
+                                    val sb = StringBuilder()
+                                    sb.appendLine("${req.method} ${req.url.path} HTTP/1.1")
+                                    sb.appendLine("Host: ${req.url.host}")
+                                    for ((key, value) in headers) {
+                                        sb.appendLine("$key: $value")
+                                    }
+                                    // Also grab cookies from CookieManager
+                                    val cookies = CookieManager.getInstance().getCookie(req.url.toString())
+                                    if (!cookies.isNullOrEmpty()) {
+                                        sb.appendLine("Cookie: $cookies")
+                                    }
+                                    interceptedHeaders = sb.toString()
+                                }
+                            }
+                            return super.shouldInterceptRequest(view, request)
+                        }
                     }
 
                     webChromeClient = object : WebChromeClient() {
@@ -273,8 +299,9 @@ fun BrowserScreen() {
         )
     }
 
-    // Cookie extraction dialog
+    // Request interception dialog
     if (showCookieDialog) {
+        var showHeaders by remember { mutableStateOf(true) }
         AlertDialog(
             onDismissRequest = { showCookieDialog = false },
             containerColor = DarkSurface,
@@ -283,22 +310,20 @@ fun BrowserScreen() {
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        Icons.Filled.Cookie,
+                        Icons.Filled.Http,
                         contentDescription = null,
                         tint = Cyan400,
                         modifier = Modifier.size(22.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Extracted Cookies", fontWeight = FontWeight.Bold)
+                    Text("Intercepted Request", fontWeight = FontWeight.Bold)
                 }
             },
             text = {
                 Column {
-                    // Imperva bypass notice
                     Text(
-                        text = "These cookies bypass Imperva/browser verification. " +
-                                "They will be injected into the [cookie] variable in your payload. " +
-                                "Use them before they expire.",
+                        text = "Captured the exact request the browser sends. " +
+                                "Use this to build payloads that bypass Imperva verification.",
                         color = StatusConnecting,
                         fontSize = 11.sp,
                         lineHeight = 15.sp,
@@ -310,21 +335,52 @@ fun BrowserScreen() {
                         fontSize = 11.sp,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
+
+                    // Toggle: Full Headers vs Cookies Only
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    ) {
+                        FilterChip(
+                            selected = showHeaders,
+                            onClick = { showHeaders = true },
+                            label = { Text("Full Request", fontSize = 11.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Cyan400.copy(alpha = 0.2f),
+                                selectedLabelColor = Cyan400
+                            )
+                        )
+                        FilterChip(
+                            selected = !showHeaders,
+                            onClick = { showHeaders = false },
+                            label = { Text("Cookies Only", fontSize = 11.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Cyan400.copy(alpha = 0.2f),
+                                selectedLabelColor = Cyan400
+                            )
+                        )
+                    }
+
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 200.dp)
+                            .heightIn(max = 250.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(DarkCard)
                             .border(0.5.dp, DarkBorder, RoundedCornerShape(8.dp))
                             .padding(10.dp)
                     ) {
+                        val content = if (showHeaders) {
+                            interceptedHeaders.ifEmpty { "No request intercepted yet — load a page first" }
+                        } else {
+                            extractedCookies.ifEmpty { "No cookies found — navigate to the target site first" }
+                        }
                         Text(
-                            text = extractedCookies.ifEmpty { "No cookies found — navigate to the target site and log in first" },
-                            color = if (extractedCookies.isEmpty()) TextTertiary else Cyan400,
-                            fontSize = 12.sp,
+                            text = content,
+                            color = if (content.startsWith("No")) TextTertiary else Cyan400,
+                            fontSize = 11.sp,
                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                            lineHeight = 18.sp
+                            lineHeight = 16.sp
                         )
                     }
                 }
@@ -332,7 +388,7 @@ fun BrowserScreen() {
             confirmButton = {
                 Button(
                     onClick = {
-                        // TODO: Save cookies to database, inject into payload [cookie] variable
+                        // TODO: Inject intercepted headers/cookies into payload [cookie] variable
                         showCookieDialog = false
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -340,7 +396,7 @@ fun BrowserScreen() {
                         contentColor = DarkBackground
                     ),
                     shape = RoundedCornerShape(8.dp),
-                    enabled = extractedCookies.isNotEmpty()
+                    enabled = interceptedHeaders.isNotEmpty() || extractedCookies.isNotEmpty()
                 ) {
                     Text("Inject into Payload", fontWeight = FontWeight.Bold)
                 }
