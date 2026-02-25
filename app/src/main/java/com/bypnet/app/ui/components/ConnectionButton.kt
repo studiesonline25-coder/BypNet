@@ -10,8 +10,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Power
-import androidx.compose.material.icons.filled.PowerOff
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -140,7 +140,7 @@ fun ConnectionButton(
             ) {
                 Icon(
                     imageVector = if (state == ConnectionState.DISCONNECTED)
-                        Icons.Filled.PowerOff else Icons.Filled.Power,
+                        Icons.Filled.PlayArrow else Icons.Filled.Stop,
                     contentDescription = "Connect",
                     tint = buttonColor,
                     modifier = Modifier.size(48.dp)

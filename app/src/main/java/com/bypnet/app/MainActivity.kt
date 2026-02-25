@@ -87,7 +87,7 @@ fun BypNetMainScaffold(onNavigate: (String) -> Unit) {
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Filled.Shield,
+                                imageVector = Icons.Filled.Lock,
                                 contentDescription = null,
                                 tint = Cyan400,
                                 modifier = Modifier.size(28.dp)
@@ -106,11 +106,11 @@ fun BypNetMainScaffold(onNavigate: (String) -> Unit) {
                     scope.launch { drawerState.close() }
                     onNavigate("payload_editor")
                 }
-                DrawerMenuItem(Icons.Filled.MyLocation, "IP Hunter") {
+                DrawerMenuItem(Icons.Filled.Search, "IP Hunter") {
                     scope.launch { drawerState.close() }
                     onNavigate("ip_hunter")
                 }
-                DrawerMenuItem(Icons.Filled.NetworkCheck, "Response Checker") {
+                DrawerMenuItem(Icons.Filled.Wifi, "Response Checker") {
                     scope.launch { drawerState.close() }
                     onNavigate("response_checker")
                 }
@@ -134,7 +134,7 @@ fun BypNetMainScaffold(onNavigate: (String) -> Unit) {
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                DrawerMenuItem(Icons.Filled.ExitToApp, "Exit", tint = StatusDisconnected) {
+                DrawerMenuItem(Icons.Filled.Close, "Exit", tint = StatusDisconnected) {
                     // TODO: exit
                 }
                 Spacer(modifier = Modifier.height(16.dp))
@@ -165,11 +165,11 @@ fun BypNetMainScaffold(onNavigate: (String) -> Unit) {
                         DropdownMenu(
                             expanded = showMenu,
                             onDismissRequest = { showMenu = false },
-                            containerColor = DarkSurface
+                            modifier = Modifier.background(DarkSurface)
                         ) {
                             DropdownMenuItem(
                                 text = { Text("Import Config (.byp)", color = TextPrimary) },
-                                leadingIcon = { Icon(Icons.Filled.FileDownload, null, tint = TextSecondary) },
+                                leadingIcon = { Icon(Icons.Filled.FolderOpen, null, tint = TextSecondary) },
                                 onClick = {
                                     showMenu = false
                                     // TODO: Launch file picker for .byp import
@@ -177,7 +177,7 @@ fun BypNetMainScaffold(onNavigate: (String) -> Unit) {
                             )
                             DropdownMenuItem(
                                 text = { Text("Export Config (.byp)", color = TextPrimary) },
-                                leadingIcon = { Icon(Icons.Filled.FileUpload, null, tint = TextSecondary) },
+                                leadingIcon = { Icon(Icons.Filled.Save, null, tint = TextSecondary) },
                                 onClick = {
                                     showMenu = false
                                     // TODO: Export current config as .byp file

@@ -29,7 +29,7 @@ fun IpHunterScreen() {
     var targetPrefix by remember { mutableStateOf("") }
     var isHunting by remember { mutableStateOf(false) }
     var currentIp by remember { mutableStateOf("---") }
-    var attempts by remember { mutableIntStateOf(0) }
+    var attempts by remember { mutableStateOf(0) }
     var found by remember { mutableStateOf(false) }
     var logs by remember { mutableStateOf(listOf<String>()) }
 
@@ -164,7 +164,7 @@ fun IpHunterScreen() {
                 enabled = targetPrefix.isNotEmpty() || isHunting
             ) {
                 Icon(
-                    imageVector = if (isHunting) Icons.Filled.Stop else Icons.Filled.FlightTakeoff,
+                    imageVector = if (isHunting) Icons.Filled.Stop else Icons.Filled.Search,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp)
                 )
@@ -187,7 +187,7 @@ fun IpHunterScreen() {
                         .border(1.dp, StatusConnected.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
                         .padding(12.dp)
                 ) {
-                    Icon(Icons.Filled.CheckCircle, null, tint = StatusConnected, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Filled.Done, null, tint = StatusConnected, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("IP Found: $currentIp", color = StatusConnected, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 }

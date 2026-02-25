@@ -72,14 +72,14 @@ fun SettingsScreen() {
         // --- DNS Section ---
         SettingsSection(title = "DNS Configuration") {
             SettingsInputItem(
-                icon = Icons.Filled.Dns,
+                icon = Icons.Filled.Language,
                 title = "Primary DNS",
                 value = primaryDns,
                 onValueChange = { primaryDns = it },
                 iconTint = Cyan400
             )
             SettingsInputItem(
-                icon = Icons.Filled.Dns,
+                icon = Icons.Filled.Language,
                 title = "Secondary DNS",
                 value = secondaryDns,
                 onValueChange = { secondaryDns = it },
@@ -119,7 +119,7 @@ fun SettingsScreen() {
         // --- Connection Section ---
         SettingsSection(title = "Connection") {
             SettingsToggleItem(
-                icon = Icons.Filled.WifiTethering,
+                icon = Icons.Filled.Wifi,
                 title = "Split Tunneling",
                 subtitle = "Choose which apps use the tunnel",
                 isChecked = splitTunnel,
@@ -128,7 +128,7 @@ fun SettingsScreen() {
             )
             SettingsDivider()
             SettingsToggleItem(
-                icon = Icons.Filled.PlayCircle,
+                icon = Icons.Filled.PlayArrow,
                 title = "Auto-Connect on Boot",
                 subtitle = "Start tunnel when device boots",
                 isChecked = autoConnect,
@@ -176,7 +176,7 @@ fun SettingsScreen() {
             )
             SettingsDivider()
             SettingsActionItem(
-                icon = Icons.Filled.Speed,
+                icon = Icons.Filled.Star,
                 title = "Speed Test",
                 subtitle = "Test your current connection speed",
                 iconTint = StatusConnecting,
@@ -313,7 +313,7 @@ fun SettingsActionItem(
             )
         }
         Icon(
-            imageVector = Icons.Filled.ChevronRight,
+            imageVector = Icons.Filled.ArrowForward,
             contentDescription = null,
             tint = TextTertiary,
             modifier = Modifier.size(18.dp)

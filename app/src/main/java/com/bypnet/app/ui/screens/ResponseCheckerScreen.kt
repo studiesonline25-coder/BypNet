@@ -8,7 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
@@ -147,7 +147,7 @@ fun ResponseCheckerScreen() {
                         .padding(12.dp)
                 ) {
                     Icon(
-                        imageVector = if (isZeroRated == true) Icons.Filled.CheckCircle else Icons.Filled.Error,
+                        imageVector = if (isZeroRated == true) Icons.Filled.Done else Icons.Filled.Error,
                         contentDescription = null,
                         tint = if (isZeroRated == true) StatusConnected else StatusDisconnected,
                         modifier = Modifier.size(20.dp)

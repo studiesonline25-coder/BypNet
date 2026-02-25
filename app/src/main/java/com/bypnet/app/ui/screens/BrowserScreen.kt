@@ -34,7 +34,7 @@ fun BrowserScreen() {
     var currentUrl by remember { mutableStateOf("") }
     var pageTitle by remember { mutableStateOf("Cookie Browser") }
     var isLoading by remember { mutableStateOf(false) }
-    var loadingProgress by remember { mutableIntStateOf(0) }
+    var loadingProgress by remember { mutableStateOf(0) }
     var extractedCookies by remember { mutableStateOf("") }
     var interceptedHeaders by remember { mutableStateOf("") }
     var showCookieDialog by remember { mutableStateOf(false) }
@@ -58,7 +58,7 @@ fun BrowserScreen() {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(
-                    imageVector = Icons.Filled.Cookie,
+                    imageVector = Icons.Filled.Lock,
                     contentDescription = null,
                     tint = Cyan400,
                     modifier = Modifier.size(20.dp)
@@ -190,7 +190,7 @@ fun BrowserScreen() {
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Icon(
-                        Icons.Filled.Cookie,
+                        Icons.Filled.Lock,
                         contentDescription = null,
                         modifier = Modifier.size(16.dp)
                     )
@@ -310,7 +310,7 @@ fun BrowserScreen() {
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        Icons.Filled.Http,
+                        Icons.Filled.Language,
                         contentDescription = null,
                         tint = Cyan400,
                         modifier = Modifier.size(22.dp)
@@ -341,24 +341,22 @@ fun BrowserScreen() {
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier.padding(bottom = 8.dp)
                     ) {
-                        FilterChip(
-                            selected = showHeaders,
+                        TextButton(
                             onClick = { showHeaders = true },
-                            label = { Text("Full Request", fontSize = 11.sp) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = Cyan400.copy(alpha = 0.2f),
-                                selectedLabelColor = Cyan400
+                            colors = ButtonDefaults.textButtonColors(
+                                contentColor = if (showHeaders) Cyan400 else TextSecondary
                             )
-                        )
-                        FilterChip(
-                            selected = !showHeaders,
+                        ) {
+                            Text("Full Request", fontSize = 11.sp, fontWeight = if (showHeaders) FontWeight.Bold else FontWeight.Normal)
+                        }
+                        TextButton(
                             onClick = { showHeaders = false },
-                            label = { Text("Cookies Only", fontSize = 11.sp) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = Cyan400.copy(alpha = 0.2f),
-                                selectedLabelColor = Cyan400
+                            colors = ButtonDefaults.textButtonColors(
+                                contentColor = if (!showHeaders) Cyan400 else TextSecondary
                             )
-                        )
+                        ) {
+                            Text("Cookies Only", fontSize = 11.sp, fontWeight = if (!showHeaders) FontWeight.Bold else FontWeight.Normal)
+                        }
                     }
 
                     Box(
