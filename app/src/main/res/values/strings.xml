@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">BypNet</string>
+    <string name="vpn_notification_title">BypNet VPN Active</string>
+    <string name="vpn_notification_text">Connected via %1$s</string>
+    <string name="connect">Connect</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="connecting">Connecting…</string>
+</resources>
