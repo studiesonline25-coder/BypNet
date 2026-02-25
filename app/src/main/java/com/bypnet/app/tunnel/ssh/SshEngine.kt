@@ -56,22 +56,8 @@ class SshEngine : TunnelEngine() {
             // Handle HTTP proxy if configured
             if (config.proxyHost.isNotEmpty() && config.proxyPort > 0) {
                 log("Using HTTP proxy ${config.proxyHost}:${config.proxyPort}")
-
-                // Process payload for the proxy connection
-                val processedPayload = if (config.payload.isNotEmpty()) {
-                    PayloadProcessor.process(
-                        template = config.payload,
-                        host = config.serverHost,
-                        port = config.serverPort,
-                        sni = config.sni,
-                        cookies = config.cookies
-                    )
-                } else ""
-
-                val proxy = ProxyHTTP(config.proxyHost, config.proxyPort)
-                if (processedPayload.isNotEmpty()) {
-                    // Custom header injection via proxy
-                    proxy.setUserPasswd("", "")
+                val proxy = CustomHttpProxy(config) { msg, level ->
+                    log(msg, level)
                 }
                 sshSession.setProxy(proxy)
             }

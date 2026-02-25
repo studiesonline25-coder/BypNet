@@ -42,37 +42,9 @@ enum class LogLevel(val tag: String, val color: androidx.compose.ui.graphics.Col
 fun LogScreen() {
     val dateFormat = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
 
-    var logs by remember {
-        mutableStateOf(
-            listOf(
-                LogEntry(level = LogLevel.INFO, message = "BypNet v1.0 initialized"),
-                LogEntry(level = LogLevel.DEBUG, message = "Tunnel engine loaded"),
-                LogEntry(level = LogLevel.INFO, message = "Protocols: SSH, SSL, HTTP, V2Ray, SS, WG, Trojan"),
-                LogEntry(level = LogLevel.SUCCESS, message = "Database initialized"),
-                LogEntry(level = LogLevel.INFO, message = "Ready to connect"),
-            )
-        )
-    }
-
+    val logs = com.bypnet.app.tunnel.LogManager.logs
     var autoScroll by remember { mutableStateOf(true) }
     val listState = rememberLazyListState()
-
-    // Listen to VPN service log events
-    DisposableEffect(Unit) {
-        BypNetVpnService.logListener = { message, level ->
-            val logLevel = when (level.uppercase()) {
-                "SUCCESS" -> LogLevel.SUCCESS
-                "ERROR" -> LogLevel.ERROR
-                "WARN" -> LogLevel.WARN
-                "DEBUG" -> LogLevel.DEBUG
-                else -> LogLevel.INFO
-            }
-            logs = logs + LogEntry(level = logLevel, message = message)
-        }
-        onDispose {
-            BypNetVpnService.logListener = null
-        }
-    }
 
     // Auto-scroll to bottom
     LaunchedEffect(logs.size) {
@@ -109,7 +81,7 @@ fun LogScreen() {
 
             // Clear logs
             IconButton(
-                onClick = { logs = emptyList() },
+                onClick = { com.bypnet.app.tunnel.LogManager.clearLogs() },
                 modifier = Modifier.size(32.dp)
             ) {
                 Icon(

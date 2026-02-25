@@ -401,9 +401,7 @@ class BypNetVpnService : VpnService() {
     }
 
     private fun emitLog(message: String, level: String) {
-        mainHandler.post {
-            logListener?.invoke(message, level)
-        }
+        com.bypnet.app.tunnel.LogManager.addLog(message, level)
     }
 
     private fun createNotification(status: String): Notification {
