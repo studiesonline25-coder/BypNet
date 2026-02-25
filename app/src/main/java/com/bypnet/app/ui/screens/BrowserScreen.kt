@@ -294,6 +294,16 @@ fun BrowserScreen() {
             },
             text = {
                 Column {
+                    // Imperva bypass notice
+                    Text(
+                        text = "These cookies bypass Imperva/browser verification. " +
+                                "They will be injected into the [cookie] variable in your payload. " +
+                                "Use them before they expire.",
+                        color = StatusConnecting,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
                     Text(
                         text = "Domain: $currentUrl",
                         color = TextTertiary,
@@ -310,7 +320,7 @@ fun BrowserScreen() {
                             .padding(10.dp)
                     ) {
                         Text(
-                            text = extractedCookies.ifEmpty { "No cookies found" },
+                            text = extractedCookies.ifEmpty { "No cookies found — navigate to the target site and log in first" },
                             color = if (extractedCookies.isEmpty()) TextTertiary else Cyan400,
                             fontSize = 12.sp,
                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
@@ -322,16 +332,17 @@ fun BrowserScreen() {
             confirmButton = {
                 Button(
                     onClick = {
-                        // TODO: Save cookies to database and inject into payload
+                        // TODO: Save cookies to database, inject into payload [cookie] variable
                         showCookieDialog = false
                     },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Cyan400,
                         contentColor = DarkBackground
                     ),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(8.dp),
+                    enabled = extractedCookies.isNotEmpty()
                 ) {
-                    Text("Save to Payload", fontWeight = FontWeight.Bold)
+                    Text("Inject into Payload", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
