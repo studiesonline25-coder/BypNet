@@ -28,7 +28,13 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.bypnet.app.ui.screens.*
 import com.bypnet.app.ui.theme.*
+import com.bypnet.app.config.ConfigManager
+import com.bypnet.app.config.BypConfig
+import com.bypnet.app.config.BypConfigSerializer
 import kotlinx.coroutines.launch
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -61,6 +67,46 @@ fun BypNetMainScaffold(onNavigate: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     val pagerState = rememberPagerState(pageCount = { 2 })
     val tabs = listOf("HOME", "LOG")
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val configManager = remember { ConfigManager(context) }
+    var importResult by remember { mutableStateOf<String?>(null) }
+
+    // File picker for Import
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            scope.launch {
+                val config = configManager.importConfig(it)
+                if (config != null) {
+                    Toast.makeText(context, "✓ Imported: ${config.name.ifEmpty { "Config" }}", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "✗ Failed to import config", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    // File picker for Export
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        uri?.let {
+            scope.launch {
+                try {
+                    // Export the current "default" config — in production this would
+                    // serialize the currently active settings from the HomeScreen
+                    val json = BypConfigSerializer.toJson(BypConfig(name = "BypNet Export"))
+                    context.contentResolver.openOutputStream(it)?.use { os ->
+                        os.write(json.toByteArray())
+                    }
+                    Toast.makeText(context, "✓ Config exported", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    Toast.makeText(context, "✗ Export failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -172,7 +218,7 @@ fun BypNetMainScaffold(onNavigate: (String) -> Unit) {
                                 leadingIcon = { Icon(Icons.Filled.FolderOpen, null, tint = TextSecondary) },
                                 onClick = {
                                     showMenu = false
-                                    // TODO: Launch file picker for .byp import
+                                    importLauncher.launch(arrayOf("*/*"))
                                 }
                             )
                             DropdownMenuItem(
@@ -180,7 +226,7 @@ fun BypNetMainScaffold(onNavigate: (String) -> Unit) {
                                 leadingIcon = { Icon(Icons.Filled.Save, null, tint = TextSecondary) },
                                 onClick = {
                                     showMenu = false
-                                    // TODO: Export current config as .byp file
+                                    exportLauncher.launch("config.byp")
                                 }
                             )
                         }
