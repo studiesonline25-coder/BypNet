@@ -52,27 +52,6 @@ fun HomeScreen() {
     var sni by remember { mutableStateOf("") }
 
     Scaffold(
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = {
-                    connectionState = if (connectionState == ConnectionState.DISCONNECTED) {
-                        ConnectionState.CONNECTING
-                    } else {
-                        ConnectionState.DISCONNECTED
-                    }
-                },
-                containerColor = if (connectionState == ConnectionState.DISCONNECTED) Cyan400 else StatusDisconnected,
-                contentColor = DarkBackground,
-                shape = CircleShape
-            ) {
-                Icon(
-                    imageVector = if (connectionState == ConnectionState.DISCONNECTED)
-                        Icons.Filled.PlayArrow else Icons.Filled.Stop,
-                    contentDescription = "Connect",
-                    modifier = Modifier.size(32.dp)
-                )
-            }
-        },
         containerColor = Color.Transparent
     ) { innerPadding ->
         Column(
@@ -196,8 +175,43 @@ fun HomeScreen() {
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
-            // Bottom padding for FAB
-            Spacer(modifier = Modifier.height(80.dp))
+            // ── Connect / Disconnect Button ──
+            Button(
+                onClick = {
+                    connectionState = if (connectionState == ConnectionState.DISCONNECTED) {
+                        ConnectionState.CONNECTING
+                    } else {
+                        ConnectionState.DISCONNECTED
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (connectionState == ConnectionState.DISCONNECTED) Cyan400 else StatusDisconnected,
+                    contentColor = DarkBackground
+                ),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+            ) {
+                Icon(
+                    imageVector = if (connectionState == ConnectionState.DISCONNECTED)
+                        Icons.Filled.PlayArrow else Icons.Filled.Stop,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = when (connectionState) {
+                        ConnectionState.DISCONNECTED -> "CONNECT"
+                        ConnectionState.CONNECTING -> "CONNECTING..."
+                        ConnectionState.CONNECTED -> "DISCONNECT"
+                    },
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }
