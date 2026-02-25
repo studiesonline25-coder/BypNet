@@ -19,16 +19,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.bypnet.app.ui.screens.BrowserScreen
-import com.bypnet.app.ui.screens.HomeScreen
-import com.bypnet.app.ui.screens.LogScreen
-import com.bypnet.app.ui.screens.SettingsScreen
+import com.bypnet.app.ui.screens.*
 import com.bypnet.app.ui.theme.*
 import kotlinx.coroutines.launch
 
@@ -39,19 +37,17 @@ class MainActivity : ComponentActivity() {
         setContent {
             BypNetTheme {
                 val navController = rememberNavController()
-                NavHost(navController = navController, startDestination = "main_pager") {
-                    composable("main_pager") {
-                        BypNetAppScaffold(
-                            onNavigateToBrowser = { navController.navigate("browser") },
-                            onNavigateToSettings = { navController.navigate("settings") }
+                NavHost(navController = navController, startDestination = "main") {
+                    composable("main") {
+                        BypNetMainScaffold(
+                            onNavigate = { route -> navController.navigate(route) }
                         )
                     }
-                    composable("browser") {
-                        BrowserScreen()
-                    }
-                    composable("settings") {
-                        SettingsScreen()
-                    }
+                    composable("browser") { BrowserScreen() }
+                    composable("settings") { SettingsScreen() }
+                    composable("payload_editor") { PayloadEditorScreen() }
+                    composable("ip_hunter") { IpHunterScreen() }
+                    composable("response_checker") { ResponseCheckerScreen() }
                 }
             }
         }
@@ -60,10 +56,7 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun BypNetAppScaffold(
-    onNavigateToBrowser: () -> Unit,
-    onNavigateToSettings: () -> Unit
-) {
+fun BypNetMainScaffold(onNavigate: (String) -> Unit) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val pagerState = rememberPagerState(pageCount = { 2 })
@@ -80,9 +73,9 @@ fun BypNetAppScaffold(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(160.dp)
+                        .height(140.dp)
                         .background(DarkCard)
-                        .padding(24.dp),
+                        .padding(20.dp),
                     contentAlignment = Alignment.BottomStart
                 ) {
                     Column {
@@ -96,125 +89,79 @@ fun BypNetAppScaffold(
                             Icon(
                                 imageVector = Icons.Filled.Shield,
                                 contentDescription = null,
-                                tint = Cyan400
+                                tint = Cyan400,
+                                modifier = Modifier.size(28.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = "BypNet HTTP Custom",
-                            color = TextPrimary,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "v1.0-RC1",
-                            color = TextSecondary,
-                            fontSize = 12.sp
-                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text("BypNet", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Text("v1.0", color = TextSecondary, fontSize = 12.sp)
                     }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Drawer Items
-                NavigationDrawerItem(
-                    icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
-                    label = { Text("Settings") },
-                    selected = false,
-                    onClick = {
-                        scope.launch { drawerState.close() }
-                        onNavigateToSettings()
-                    },
-                    colors = NavigationDrawerItemDefaults.colors(
-                        unselectedContainerColor = Color.Transparent,
-                        unselectedIconColor = TextSecondary,
-                        unselectedTextColor = TextPrimary
-                    ),
-                    modifier = Modifier.padding(horizontal = 12.dp)
+                // Menu Items
+                DrawerMenuItem(Icons.Filled.Edit, "Payload & Proxy") {
+                    scope.launch { drawerState.close() }
+                    onNavigate("payload_editor")
+                }
+                DrawerMenuItem(Icons.Filled.MyLocation, "IP Hunter") {
+                    scope.launch { drawerState.close() }
+                    onNavigate("ip_hunter")
+                }
+                DrawerMenuItem(Icons.Filled.NetworkCheck, "Response Checker") {
+                    scope.launch { drawerState.close() }
+                    onNavigate("response_checker")
+                }
+                DrawerMenuItem(Icons.Filled.Public, "Cookie Browser") {
+                    scope.launch { drawerState.close() }
+                    onNavigate("browser")
+                }
+
+                HorizontalDivider(
+                    color = DarkBorder,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                 )
 
-                NavigationDrawerItem(
-                    icon = { Icon(Icons.Filled.DeleteSweep, contentDescription = null) },
-                    label = { Text("Clear Data") },
-                    selected = false,
-                    onClick = { scope.launch { drawerState.close() } },
-                    colors = NavigationDrawerItemDefaults.colors(
-                        unselectedContainerColor = Color.Transparent,
-                        unselectedIconColor = TextSecondary,
-                        unselectedTextColor = TextPrimary
-                    ),
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-
-                NavigationDrawerItem(
-                    icon = { Icon(Icons.Filled.Info, contentDescription = null) },
-                    label = { Text("About Us") },
-                    selected = false,
-                    onClick = { scope.launch { drawerState.close() } },
-                    colors = NavigationDrawerItemDefaults.colors(
-                        unselectedContainerColor = Color.Transparent,
-                        unselectedIconColor = TextSecondary,
-                        unselectedTextColor = TextPrimary
-                    ),
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
+                DrawerMenuItem(Icons.Filled.Settings, "Settings") {
+                    scope.launch { drawerState.close() }
+                    onNavigate("settings")
+                }
+                DrawerMenuItem(Icons.Filled.Info, "About") {
+                    scope.launch { drawerState.close() }
+                }
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                NavigationDrawerItem(
-                    icon = { Icon(Icons.Filled.ExitToApp, contentDescription = null) },
-                    label = { Text("Exit") },
-                    selected = false,
-                    onClick = { /* Exit App */ },
-                    colors = NavigationDrawerItemDefaults.colors(
-                        unselectedContainerColor = Color.Transparent,
-                        unselectedIconColor = StatusDisconnected,
-                        unselectedTextColor = StatusDisconnected
-                    ),
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 16.dp)
-                )
+                DrawerMenuItem(Icons.Filled.ExitToApp, "Exit", tint = StatusDisconnected) {
+                    // TODO: exit
+                }
+                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     ) {
-        Column(modifier = Modifier.fillMaxSize().background(DarkBackground)) {
-            // App Bar
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(DarkBackground)
+        ) {
+            // Top App Bar
             TopAppBar(
                 title = {
-                    Text(
-                        text = "HTTP Custom",
-                        color = TextPrimary,
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 18.sp
-                    )
+                    Text("BypNet", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 },
                 navigationIcon = {
                     IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                        Icon(
-                            imageVector = Icons.Filled.Menu,
-                            contentDescription = "Menu",
-                            tint = TextPrimary
-                        )
+                        Icon(Icons.Filled.Menu, contentDescription = "Menu", tint = TextPrimary)
                     }
                 },
                 actions = {
-                    IconButton(onClick = onNavigateToBrowser) {
-                        Icon(
-                            imageVector = Icons.Filled.Public,
-                            contentDescription = "Browser",
-                            tint = Cyan400
-                        )
-                    }
-                    IconButton(onClick = { /* TODO: 3-dot menu */ }) {
-                        Icon(
-                            imageVector = Icons.Filled.MoreVert,
-                            contentDescription = "More options",
-                            tint = TextPrimary
-                        )
+                    IconButton(onClick = { /* overflow */ }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "More", tint = TextPrimary)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = DarkSurface
-                )
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkSurface)
             )
 
             // Tab Row
@@ -230,16 +177,12 @@ fun BypNetAppScaffold(
                         )
                     }
                 },
-                divider = {
-                    HorizontalDivider(color = DarkBorder)
-                }
+                divider = { HorizontalDivider(color = DarkBorder) }
             ) {
                 tabs.forEachIndexed { index, title ->
                     Tab(
                         selected = pagerState.currentPage == index,
-                        onClick = {
-                            scope.launch { pagerState.animateScrollToPage(index) }
-                        },
+                        onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
                         text = {
                             Text(
                                 text = title,
@@ -251,11 +194,8 @@ fun BypNetAppScaffold(
                 }
             }
 
-            // Pager Content
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.fillMaxSize()
-            ) { page ->
+            // Pager
+            HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
                 when (page) {
                     0 -> HomeScreen()
                     1 -> LogScreen()
@@ -263,4 +203,25 @@ fun BypNetAppScaffold(
             }
         }
     }
+}
+
+@Composable
+fun DrawerMenuItem(
+    icon: ImageVector,
+    label: String,
+    tint: Color = TextSecondary,
+    onClick: () -> Unit
+) {
+    NavigationDrawerItem(
+        icon = { Icon(icon, contentDescription = null) },
+        label = { Text(label) },
+        selected = false,
+        onClick = onClick,
+        colors = NavigationDrawerItemDefaults.colors(
+            unselectedContainerColor = Color.Transparent,
+            unselectedIconColor = tint,
+            unselectedTextColor = if (tint == StatusDisconnected) tint else TextPrimary
+        ),
+        modifier = Modifier.padding(horizontal = 12.dp)
+    )
 }
