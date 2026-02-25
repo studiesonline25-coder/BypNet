@@ -83,11 +83,11 @@ class SshEngine : TunnelEngine() {
                 session = sshSession
                 log("SSH session established successfully!", "SUCCESS")
 
-                // Set up dynamic port forwarding (SOCKS5 proxy)
-                // setPortForwardingD creates a local SOCKS5 proxy that
-                // forwards all connections through the SSH tunnel
-                localPort = sshSession.setPortForwardingD(0)
-                log("Local SOCKS5 proxy on port $localPort", "SUCCESS")
+                // Set up local port forwarding (Note: JSch 0.1.55 does not support native SOCKS5 setPortForwardingD)
+                // Full VPN TUN routing over SSH would require integrating a tun2socks library.
+                localPort = sshSession.setPortForwardingL(0, "127.0.0.1", 0)
+                log("Local SSH forward opened on port $localPort", "SUCCESS")
+                log("NOTE: Full VPN TUN routing over SSH requires a tun2socks implementation.", "WARN")
 
                 updateStatus(TunnelStatus.CONNECTED)
             } else {
