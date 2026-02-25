@@ -18,6 +18,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.bypnet.app.tunnel.BypNetVpnService
 import com.bypnet.app.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.*
@@ -41,7 +42,6 @@ enum class LogLevel(val tag: String, val color: androidx.compose.ui.graphics.Col
 fun LogScreen() {
     val dateFormat = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
 
-    // Sample logs for demo
     var logs by remember {
         mutableStateOf(
             listOf(
@@ -56,6 +56,30 @@ fun LogScreen() {
 
     var autoScroll by remember { mutableStateOf(true) }
     val listState = rememberLazyListState()
+
+    // Listen to VPN service log events
+    DisposableEffect(Unit) {
+        BypNetVpnService.logListener = { message, level ->
+            val logLevel = when (level.uppercase()) {
+                "SUCCESS" -> LogLevel.SUCCESS
+                "ERROR" -> LogLevel.ERROR
+                "WARN" -> LogLevel.WARN
+                "DEBUG" -> LogLevel.DEBUG
+                else -> LogLevel.INFO
+            }
+            logs = logs + LogEntry(level = logLevel, message = message)
+        }
+        onDispose {
+            BypNetVpnService.logListener = null
+        }
+    }
+
+    // Auto-scroll to bottom
+    LaunchedEffect(logs.size) {
+        if (autoScroll && logs.isNotEmpty()) {
+            listState.animateScrollToItem(logs.lastIndex)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -75,8 +99,8 @@ fun LogScreen() {
                 modifier = Modifier.size(32.dp)
             ) {
                 Icon(
-                    imageVector = if (autoScroll) Icons.Filled.VerticalAlignBottom
-                    else Icons.Filled.VerticalAlignCenter,
+                    imageVector = if (autoScroll) Icons.Filled.KeyboardArrowDown
+                    else Icons.Filled.KeyboardArrowUp,
                     contentDescription = "Auto scroll",
                     tint = if (autoScroll) Cyan400 else TextTertiary,
                     modifier = Modifier.size(18.dp)
@@ -89,7 +113,7 @@ fun LogScreen() {
                 modifier = Modifier.size(32.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Filled.DeleteSweep,
+                    imageVector = Icons.Filled.Delete,
                     contentDescription = "Clear",
                     tint = TextTertiary,
                     modifier = Modifier.size(18.dp)
@@ -97,7 +121,7 @@ fun LogScreen() {
             }
         }
 
-        Divider(color = DarkBorder, thickness = 0.5.dp)
+        HorizontalDivider(color = DarkBorder, thickness = 0.5.dp)
 
         // Log list
         if (logs.isEmpty()) {
@@ -109,7 +133,7 @@ fun LogScreen() {
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(
-                        imageVector = Icons.Filled.TextSnippet,
+                        imageVector = Icons.Filled.List,
                         contentDescription = null,
                         tint = TextTertiary,
                         modifier = Modifier.size(48.dp)
