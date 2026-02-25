@@ -38,26 +38,13 @@ fun HomeScreen() {
     // Connection state synced from VPN service
     var connectionState by remember { mutableStateOf(ConnectionState.DISCONNECTED) }
 
-    // Checkboxes
-    var enableSsh by remember { mutableStateOf(true) }
-    var enableSsl by remember { mutableStateOf(false) }
-    var enableV2ray by remember { mutableStateOf(false) }
-    var customPayload by remember { mutableStateOf(true) }
-    var dnsCustom by remember { mutableStateOf(false) }
-    var forwardDns by remember { mutableStateOf(true) }
-    var keepAlive by remember { mutableStateOf(true) }
-    var udpCustom by remember { mutableStateOf(false) }
-
     // SSH Config
     var sshHost by remember { mutableStateOf("") }
     var sshPort by remember { mutableStateOf("22") }
     var sshUser by remember { mutableStateOf("") }
     var sshPass by remember { mutableStateOf("") }
 
-    // Proxy & Payload
-    var payload by remember { mutableStateOf("GET / HTTP/1.1[crlf]Host: [sni][crlf]Connection: Keep-Alive[crlf][crlf]") }
-    var proxyHost by remember { mutableStateOf("") }
-    var proxyPort by remember { mutableStateOf("8080") }
+    // Checkboxes
     var enableSsh by remember { mutableStateOf(true) }
     var enableSsl by remember { mutableStateOf(false) }
     var enableV2ray by remember { mutableStateOf(false) }
@@ -101,7 +88,7 @@ fun HomeScreen() {
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         // VPN permission granted (or already had it) — start the service
-        startVpnService(context, sshHost, sshPort, sshUser, sshPass, sni, dns1, dns2, enableSsh, enableSsl, payload, proxyHost, proxyPort)
+        startVpnService(context, sshHost, sshPort, sshUser, sshPass, sni, dns1, dns2, enableSsh, enableSsl)
     }
 
     // Function to start connection
@@ -112,7 +99,7 @@ fun HomeScreen() {
             vpnPermissionLauncher.launch(vpnIntent)
         } else {
             // Already have permission — start directly
-            startVpnService(context, sshHost, sshPort, sshUser, sshPass, sni, dns1, dns2, enableSsh, enableSsl, payload, proxyHost, proxyPort)
+            startVpnService(context, sshHost, sshPort, sshUser, sshPass, sni, dns1, dns2, enableSsh, enableSsl)
         }
     }
 
@@ -134,48 +121,6 @@ fun HomeScreen() {
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
-            if (customPayload) {
-                SectionHeader("Payload & Proxy")
-                Spacer(modifier = Modifier.height(4.dp))
-                androidx.compose.material3.OutlinedTextField(
-                    value = payload,
-                    onValueChange = { payload = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(100.dp),
-                    textStyle = androidx.compose.ui.text.TextStyle(
-                        color = TextPrimary,
-                        fontSize = 12.sp,
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                    ),
-                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Cyan400,
-                        unfocusedBorderColor = DarkBorder,
-                        focusedContainerColor = DarkCard,
-                        unfocusedContainerColor = DarkCard,
-                    ),
-                    shape = RoundedCornerShape(8.dp)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    BypNetTextField(
-                        value = proxyHost,
-                        onValueChange = { proxyHost = it },
-                        label = "Remote Proxy",
-                        placeholder = "192.168.1.1",
-                        modifier = Modifier.weight(2f)
-                    )
-                    BypNetTextField(
-                        value = proxyPort,
-                        onValueChange = { proxyPort = it },
-                        label = "Port",
-                        placeholder = "8080",
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-
             // ── SSH Configuration ──
             SectionHeader("SSH Configuration")
             Spacer(modifier = Modifier.height(4.dp))
@@ -339,10 +284,7 @@ private fun startVpnService(
     dns1: String,
     dns2: String,
     enableSsh: Boolean,
-    enableSsl: Boolean,
-    payload: String,
-    proxyHost: String,
-    proxyPort: String
+    enableSsl: Boolean
 ) {
     val protocol = when {
         enableSsh -> "SSH"
@@ -358,9 +300,9 @@ private fun startVpnService(
         putExtra(BypNetVpnService.EXTRA_USERNAME, sshUser)
         putExtra(BypNetVpnService.EXTRA_PASSWORD, sshPass)
         putExtra(BypNetVpnService.EXTRA_SNI, sni)
-        putExtra(BypNetVpnService.EXTRA_PAYLOAD, payload)
-        putExtra(BypNetVpnService.EXTRA_PROXY_HOST, proxyHost)
-        putExtra(BypNetVpnService.EXTRA_PROXY_PORT, proxyPort.toIntOrNull() ?: 8080)
+        putExtra(BypNetVpnService.EXTRA_PAYLOAD, com.bypnet.app.config.SessionManager.payload)
+        putExtra(BypNetVpnService.EXTRA_PROXY_HOST, com.bypnet.app.config.SessionManager.proxyHost)
+        putExtra(BypNetVpnService.EXTRA_PROXY_PORT, com.bypnet.app.config.SessionManager.proxyPort.toIntOrNull() ?: 8080)
         putExtra(BypNetVpnService.EXTRA_DNS1, dns1)
         putExtra(BypNetVpnService.EXTRA_DNS2, dns2)
     }

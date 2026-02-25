@@ -26,9 +26,9 @@ import com.bypnet.app.ui.theme.*
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PayloadEditorScreen() {
-    var payload by remember { mutableStateOf("CONNECT [host_port] [protocol][crlf]Host: [host][crlf][crlf]") }
-    var proxyHost by remember { mutableStateOf("") }
-    var proxyPort by remember { mutableStateOf("") }
+    var payload = com.bypnet.app.config.SessionManager.payload
+    var proxyHost = com.bypnet.app.config.SessionManager.proxyHost
+    var proxyPort = com.bypnet.app.config.SessionManager.proxyPort
     var autoReplace by remember { mutableStateOf(true) }
 
     Column(
@@ -76,7 +76,10 @@ fun PayloadEditorScreen() {
             ) {
                 BasicTextField(
                     value = payload,
-                    onValueChange = { payload = it },
+                    onValueChange = { 
+                        payload = it
+                        com.bypnet.app.config.SessionManager.payload = it
+                    },
                     textStyle = TextStyle(
                         color = TextPrimary,
                         fontSize = 13.sp,
@@ -118,7 +121,10 @@ fun PayloadEditorScreen() {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 BasicTextField(
                     value = proxyHost,
-                    onValueChange = { proxyHost = it },
+                    onValueChange = { 
+                        proxyHost = it
+                        com.bypnet.app.config.SessionManager.proxyHost = it
+                    },
                     textStyle = TextStyle(color = TextPrimary, fontSize = 14.sp),
                     cursorBrush = SolidColor(Cyan400),
                     decorationBox = { inner ->
@@ -137,7 +143,10 @@ fun PayloadEditorScreen() {
                 )
                 BasicTextField(
                     value = proxyPort,
-                    onValueChange = { proxyPort = it },
+                    onValueChange = { 
+                        proxyPort = it
+                        com.bypnet.app.config.SessionManager.proxyPort = it
+                    },
                     textStyle = TextStyle(color = TextPrimary, fontSize = 14.sp),
                     cursorBrush = SolidColor(Cyan400),
                     decorationBox = { inner ->
