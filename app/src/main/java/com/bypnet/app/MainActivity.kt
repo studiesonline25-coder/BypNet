@@ -124,6 +124,20 @@ fun BypNetMainScaffold(onNavigate: (String) -> Unit) {
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                 )
 
+                DrawerMenuItem(Icons.Filled.FileDownload, "Import Config (.byp)") {
+                    scope.launch { drawerState.close() }
+                    // TODO: Launch file picker for .byp import
+                }
+                DrawerMenuItem(Icons.Filled.FileUpload, "Export Config (.byp)") {
+                    scope.launch { drawerState.close() }
+                    // TODO: Export current config as .byp file
+                }
+
+                HorizontalDivider(
+                    color = DarkBorder,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+
                 DrawerMenuItem(Icons.Filled.Settings, "Settings") {
                     scope.launch { drawerState.close() }
                     onNavigate("settings")
