@@ -62,35 +62,13 @@ fun LogScreen() {
             .fillMaxSize()
             .background(DarkBackground)
     ) {
-        // Toolbar
+        // Control Bar
         Row(
-            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .fillMaxWidth()
-                .background(DarkSurface)
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .padding(horizontal = 12.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.End
         ) {
-            Icon(
-                imageVector = Icons.Filled.Terminal,
-                contentDescription = null,
-                tint = Cyan400,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(modifier = Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Connection Logs",
-                    color = TextPrimary,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = "${logs.size} entries",
-                    color = TextTertiary,
-                    fontSize = 11.sp
-                )
-            }
-
             // Auto-scroll toggle
             IconButton(
                 onClick = { autoScroll = !autoScroll },
@@ -133,7 +111,7 @@ fun LogScreen() {
                     Icon(
                         imageVector = Icons.Filled.TextSnippet,
                         contentDescription = null,
-                        tint = TextTertiary.copy(alpha = 0.3f),
+                        tint = TextTertiary,
                         modifier = Modifier.size(48.dp)
                     )
                     Spacer(modifier = Modifier.height(12.dp))
@@ -144,7 +122,7 @@ fun LogScreen() {
                     )
                     Text(
                         text = "Connection logs will appear here",
-                        color = TextTertiary.copy(alpha = 0.5f),
+                        color = TextTertiary,
                         fontSize = 12.sp
                     )
                 }
