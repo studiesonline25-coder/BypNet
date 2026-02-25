@@ -17,6 +17,8 @@ import com.bypnet.app.tunnel.trojan.TrojanEngine
 import com.bypnet.app.tunnel.v2ray.V2RayEngine
 import com.bypnet.app.tunnel.wireguard.WireGuardEngine
 import kotlinx.coroutines.*
+import android.os.Handler
+import android.os.Looper
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
@@ -36,6 +38,7 @@ class BypNetVpnService : VpnService() {
     private var tunnelEngine: TunnelEngine? = null
     private var tunnelSocket: Socket? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     // Traffic stats
     @Volatile var totalUpload: Long = 0
@@ -266,6 +269,17 @@ class BypNetVpnService : VpnService() {
                         simpleTunForward(tunInput, tunOutput, buffer)
                     }
                 }
+                is SslEngine -> {
+                    val sslIn = engine.getInputStream()
+                    val sslOut = engine.getOutputStream()
+                    if (sslIn != null && sslOut != null) {
+                        emitLog("Forwarding traffic via SSL/TLS tunnel", "INFO")
+                        forwardViaStreams(tunInput, tunOutput, buffer, sslIn, sslOut)
+                    } else {
+                        emitLog("SSL connected but streams are null", "WARN")
+                        simpleTunForward(tunInput, tunOutput, buffer)
+                    }
+                }
                 else -> {
                     emitLog("Using generic traffic forwarding", "INFO")
                     simpleTunForward(tunInput, tunOutput, buffer)
@@ -381,11 +395,15 @@ class BypNetVpnService : VpnService() {
 
     private fun updateStatus(status: TunnelStatus) {
         currentStatus = status
-        statusListener?.invoke(status)
+        mainHandler.post {
+            statusListener?.invoke(status)
+        }
     }
 
     private fun emitLog(message: String, level: String) {
-        logListener?.invoke(message, level)
+        mainHandler.post {
+            logListener?.invoke(message, level)
+        }
     }
 
     private fun createNotification(status: String): Notification {

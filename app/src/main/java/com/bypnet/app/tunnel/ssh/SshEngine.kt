@@ -84,8 +84,10 @@ class SshEngine : TunnelEngine() {
                 log("SSH session established successfully!", "SUCCESS")
 
                 // Set up dynamic port forwarding (SOCKS5 proxy)
-                localPort = sshSession.setPortForwardingL(0, "127.0.0.1", 0)
-                log("Local SOCKS proxy on port $localPort", "SUCCESS")
+                // setPortForwardingD creates a local SOCKS5 proxy that
+                // forwards all connections through the SSH tunnel
+                localPort = sshSession.setPortForwardingD(0)
+                log("Local SOCKS5 proxy on port $localPort", "SUCCESS")
 
                 updateStatus(TunnelStatus.CONNECTED)
             } else {

@@ -384,9 +384,19 @@ fun BrowserScreen() {
                 }
             },
             confirmButton = {
+                val context = LocalContext.current
                 Button(
                     onClick = {
-                        // TODO: Inject intercepted headers/cookies into payload [cookie] variable
+                        val textToCopy = if (showHeaders) interceptedHeaders else extractedCookies
+                        if (textToCopy.isNotEmpty()) {
+                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            val clip = android.content.ClipData.newPlainText(
+                                if (showHeaders) "BypNet Request" else "BypNet Cookies",
+                                textToCopy
+                            )
+                            clipboard.setPrimaryClip(clip)
+                            android.widget.Toast.makeText(context, "✓ Copied to clipboard", android.widget.Toast.LENGTH_SHORT).show()
+                        }
                         showCookieDialog = false
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -396,12 +406,18 @@ fun BrowserScreen() {
                     shape = RoundedCornerShape(8.dp),
                     enabled = interceptedHeaders.isNotEmpty() || extractedCookies.isNotEmpty()
                 ) {
-                    Text("Inject into Payload", fontWeight = FontWeight.Bold)
+                    Icon(Icons.Filled.ContentCopy, null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        if (showHeaders) "Copy Request" else "Copy Cookies",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showCookieDialog = false }) {
-                    Text("Cancel", color = TextSecondary)
+                    Text("Close", color = TextSecondary)
                 }
             }
         )
