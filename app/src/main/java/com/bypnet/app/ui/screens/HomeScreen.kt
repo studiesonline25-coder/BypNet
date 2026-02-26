@@ -250,10 +250,6 @@ fun HomeScreen() {
                     Text(formatBytes(totalUp), color = TextTertiary, fontSize = 10.sp)
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Timer", color = TextTertiary, fontSize = 10.sp)
-                    Text(formatDuration(elapsedMs), color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("↓ Download", color = TextTertiary, fontSize = 10.sp)
                     Text(formatSpeed(downloadSpeed), color = StatusConnected, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     Text(formatBytes(totalDown), color = TextTertiary, fontSize = 10.sp)
