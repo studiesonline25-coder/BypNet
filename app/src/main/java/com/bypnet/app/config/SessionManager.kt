@@ -18,6 +18,9 @@ object SessionManager {
     var proxyHost by mutableStateOf("")
     var proxyPort by mutableStateOf("8080")
 
+    // Connection method: SSH, SSH+SSL, SSL/TLS, WebSocket, V2Ray
+    var connectionMethod by mutableStateOf("SSH")
+
     // SSH config (editable unless locked)
     var sshConfig by mutableStateOf("") // ip:port@user:pass
 

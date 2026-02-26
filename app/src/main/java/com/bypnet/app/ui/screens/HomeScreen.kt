@@ -6,63 +6,85 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.bypnet.app.config.SessionManager
 import com.bypnet.app.tunnel.BypNetVpnService
 import com.bypnet.app.tunnel.TunnelStatus
 import com.bypnet.app.ui.components.BypNetTextField
 import com.bypnet.app.ui.components.ConnectionState
 import com.bypnet.app.ui.theme.*
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen() {
     val context = LocalContext.current
 
-    // Connection state synced from VPN service
+    // ── State ──
     var connectionState by remember { mutableStateOf(ConnectionState.DISCONNECTED) }
+    val isLocked = SessionManager.configLocked
 
-    // All config is now backed by SessionManager (shared with PayloadEditor, import, etc.)
-    val isLocked = com.bypnet.app.config.SessionManager.configLocked
+    // Connection method
+    var connectionMethod by remember { mutableStateOf(SessionManager.connectionMethod) }
+    var methodExpanded by remember { mutableStateOf(false) }
+    val connectionMethods = listOf("SSH", "SSH + SSL", "SSL/TLS", "WebSocket", "V2Ray")
 
-    // SSH Config — unified format: ip:port@user:pass
-    var sshConfig by remember { mutableStateOf(com.bypnet.app.config.SessionManager.sshConfig) }
-
-    // Checkboxes
-    var enableSsh by remember { mutableStateOf(true) }
-    var enableSsl by remember { mutableStateOf(false) }
-    var enableV2ray by remember { mutableStateOf(false) }
-    var customPayload by remember { mutableStateOf(true) }
-    var dnsCustom by remember { mutableStateOf(false) }
-    var forwardDns by remember { mutableStateOf(true) }
-    var keepAlive by remember { mutableStateOf(true) }
-    var udpCustom by remember { mutableStateOf(false) }
-
-    // DNS fields
-    var dns1 by remember { mutableStateOf(com.bypnet.app.config.SessionManager.dns1) }
-    var dns2 by remember { mutableStateOf(com.bypnet.app.config.SessionManager.dns2) }
+    // SSH Config
+    var sshConfig by remember { mutableStateOf(SessionManager.sshConfig) }
 
     // SNI
-    var sni by remember { mutableStateOf(com.bypnet.app.config.SessionManager.sni) }
+    var sni by remember { mutableStateOf(SessionManager.sni) }
 
-    // Listen to VPN service status changes
+    // Remote Proxy
+    var proxyHost by remember { mutableStateOf(SessionManager.proxyHost) }
+    var proxyPort by remember { mutableStateOf(SessionManager.proxyPort) }
+
+    // DNS
+    var dns1 by remember { mutableStateOf(SessionManager.dns1) }
+    var dns2 by remember { mutableStateOf(SessionManager.dns2) }
+    var dnsEnabled by remember { mutableStateOf(false) }
+
+    // Speed/timer (read from VPN service)
+    var uploadSpeed by remember { mutableStateOf(0L) }
+    var downloadSpeed by remember { mutableStateOf(0L) }
+    var totalUp by remember { mutableStateOf(0L) }
+    var totalDown by remember { mutableStateOf(0L) }
+    var elapsedMs by remember { mutableStateOf(0L) }
+
+    // Speed ticker when connected
+    LaunchedEffect(connectionState) {
+        if (connectionState == ConnectionState.CONNECTED) {
+            val startTime = System.currentTimeMillis()
+            while (true) {
+                uploadSpeed = BypNetVpnService.uploadSpeed
+                downloadSpeed = BypNetVpnService.downloadSpeed
+                totalUp = BypNetVpnService.totalUpload
+                totalDown = BypNetVpnService.totalDownload
+                elapsedMs = System.currentTimeMillis() - startTime
+                kotlinx.coroutines.delay(1000)
+            }
+        } else {
+            uploadSpeed = 0; downloadSpeed = 0; totalUp = 0; totalDown = 0; elapsedMs = 0
+        }
+    }
+
+    // Listen to VPN status
     DisposableEffect(Unit) {
         BypNetVpnService.statusListener = { status ->
             connectionState = when (status) {
@@ -73,48 +95,40 @@ fun HomeScreen() {
                 TunnelStatus.ERROR -> ConnectionState.DISCONNECTED
             }
         }
-        // Sync initial state
         connectionState = when (BypNetVpnService.currentStatus) {
             TunnelStatus.CONNECTED -> ConnectionState.CONNECTED
             TunnelStatus.CONNECTING, TunnelStatus.DISCONNECTING -> ConnectionState.CONNECTING
             else -> ConnectionState.DISCONNECTED
         }
-        onDispose {
-            BypNetVpnService.statusListener = null
-        }
+        onDispose { BypNetVpnService.statusListener = null }
     }
 
-    // VPN permission request launcher
-    val vpnPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        // VPN permission granted (or already had it) — start the service
-        startVpnService(context, sshConfig, sni, dns1, dns2, enableSsh, enableSsl)
+    // VPN permission launcher
+    val vpnLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        startVpnService(context, connectionMethod, sshConfig, sni, proxyHost, proxyPort, dns1, dns2)
     }
 
-    // Function to start connection
     fun connect() {
-        // Check if VPN permission is needed
         val vpnIntent = VpnService.prepare(context)
-        if (vpnIntent != null) {
-            vpnPermissionLauncher.launch(vpnIntent)
-        } else {
-            // Already have permission — start directly
-            startVpnService(context, sshConfig, sni, dns1, dns2, enableSsh, enableSsl)
-        }
+        if (vpnIntent != null) vpnLauncher.launch(vpnIntent)
+        else startVpnService(context, connectionMethod, sshConfig, sni, proxyHost, proxyPort, dns1, dns2)
     }
 
     fun disconnect() {
-        val intent = Intent(context, BypNetVpnService::class.java).apply {
+        context.startService(Intent(context, BypNetVpnService::class.java).apply {
             action = BypNetVpnService.ACTION_DISCONNECT
-        }
-        context.startService(intent)
+        })
     }
 
-    Scaffold(
-        containerColor = Color.Transparent
-    ) { innerPadding ->
+    // Whether to show SSH fields
+    val showSsh = connectionMethod in listOf("SSH", "SSH + SSL")
+    val showSsl = connectionMethod in listOf("SSH + SSL", "SSL/TLS")
+    val showProxy = connectionMethod in listOf("SSH", "SSH + SSL", "SSL/TLS", "WebSocket")
 
+    // ── UI ──
+    Scaffold(containerColor = Color.Transparent) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -133,165 +147,291 @@ fun HomeScreen() {
                         .border(1.dp, Cyan400.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
                         .padding(12.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Lock,
-                        contentDescription = null,
-                        tint = Cyan400,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(Icons.Filled.Lock, null, tint = Cyan400, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
                     Column {
                         Text(
-                            text = "Locked Config" + if (com.bypnet.app.config.SessionManager.configName.isNotEmpty()) 
-                                ": ${com.bypnet.app.config.SessionManager.configName}" else "",
-                            color = Cyan400,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold
+                            "🔒 Locked Config" + if (SessionManager.configName.isNotEmpty()) ": ${SessionManager.configName}" else "",
+                            color = Cyan400, fontSize = 13.sp, fontWeight = FontWeight.SemiBold
                         )
-                        Text(
-                            text = "Config details are hidden. Tap connect to use.",
-                            color = TextTertiary,
-                            fontSize = 11.sp
+                        Text("Details hidden. Tap connect to use.", color = TextTertiary, fontSize = 11.sp)
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+            }
+
+            // ── Connection Method Dropdown ──
+            SectionHeader("CONNECTION METHOD")
+            Spacer(Modifier.height(4.dp))
+            ExposedDropdownMenuBox(
+                expanded = methodExpanded,
+                onExpandedChange = { methodExpanded = !methodExpanded }
+            ) {
+                OutlinedTextField(
+                    value = connectionMethod,
+                    onValueChange = {},
+                    readOnly = true,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = methodExpanded) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Cyan400,
+                        unfocusedBorderColor = DarkBorder,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedContainerColor = DarkCard,
+                        unfocusedContainerColor = DarkCard,
+                        focusedTrailingIconColor = Cyan400,
+                        unfocusedTrailingIconColor = TextSecondary
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(),
+                    textStyle = androidx.compose.ui.text.TextStyle(
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp
+                    )
+                )
+                ExposedDropdownMenu(
+                    expanded = methodExpanded,
+                    onDismissRequest = { methodExpanded = false },
+                    modifier = Modifier.background(DarkSurface)
+                ) {
+                    connectionMethods.forEach { method ->
+                        DropdownMenuItem(
+                            text = { Text(method, color = if (method == connectionMethod) Cyan400 else TextPrimary) },
+                            onClick = {
+                                connectionMethod = method
+                                SessionManager.connectionMethod = method
+                                methodExpanded = false
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    when (method) {
+                                        "SSH" -> Icons.Filled.Terminal
+                                        "SSH + SSL" -> Icons.Filled.Security
+                                        "SSL/TLS" -> Icons.Filled.Lock
+                                        "WebSocket" -> Icons.Filled.Cable
+                                        "V2Ray" -> Icons.Filled.Shield
+                                        else -> Icons.Filled.VpnKey
+                                    },
+                                    null,
+                                    tint = if (method == connectionMethod) Cyan400 else TextSecondary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
                         )
                     }
                 }
-                Spacer(modifier = Modifier.height(12.dp))
             }
+            Spacer(Modifier.height(14.dp))
 
             // ── SSH Configuration ──
-            SectionHeader("SSH Configuration")
-            Spacer(modifier = Modifier.height(4.dp))
-
-            BypNetTextField(
-                value = if (isLocked) "••••••••••••••••" else sshConfig,
-                onValueChange = { if (!isLocked) { sshConfig = it; com.bypnet.app.config.SessionManager.sshConfig = it } },
-                label = "SSH",
-                placeholder = "ip:port@username:password",
-                enabled = !isLocked
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // ── Options Grid ──
-            SectionHeader("Options")
-            Spacer(modifier = Modifier.height(4.dp))
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(DarkCard)
-                    .border(0.5.dp, DarkBorder, RoundedCornerShape(8.dp))
-                    .padding(8.dp)
-            ) {
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    CompactCheckbox("SSH", enableSsh, { enableSsh = it }, Modifier.weight(1f))
-                    CompactCheckbox("SSL/TLS", enableSsl, { enableSsl = it }, Modifier.weight(1f))
-                    CompactCheckbox("V2Ray", enableV2ray, { enableV2ray = it }, Modifier.weight(1f))
-                }
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    CompactCheckbox("Custom Payload", customPayload, { customPayload = it }, Modifier.weight(1f))
-                    CompactCheckbox("DNS Custom", dnsCustom, { dnsCustom = it }, Modifier.weight(1f))
-                }
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    CompactCheckbox("Forward DNS", forwardDns, { forwardDns = it }, Modifier.weight(1f))
-                    CompactCheckbox("Keep Alive", keepAlive, { keepAlive = it }, Modifier.weight(1f))
-                    CompactCheckbox("UDP Custom", udpCustom, { udpCustom = it }, Modifier.weight(1f))
-                }
+            if (showSsh) {
+                SectionHeader("SSH SERVER")
+                Spacer(Modifier.height(4.dp))
+                BypNetTextField(
+                    value = if (isLocked) "••••••••••••••••" else sshConfig,
+                    onValueChange = {
+                        if (!isLocked) {
+                            sshConfig = it; SessionManager.sshConfig = it
+                        }
+                    },
+                    label = "SSH",
+                    placeholder = "ip:port@username:password",
+                    enabled = !isLocked
+                )
+                Spacer(Modifier.height(14.dp))
             }
-            Spacer(modifier = Modifier.height(12.dp))
 
-            // ── Conditional Sections ──
-            if (dnsCustom) {
+            // ── SSL/TLS (SNI) ──
+            if (showSsl) {
+                SectionHeader("SSL/TLS")
+                Spacer(Modifier.height(4.dp))
+                BypNetTextField(
+                    value = if (isLocked) "••••••••" else sni,
+                    onValueChange = {
+                        if (!isLocked) {
+                            sni = it; SessionManager.sni = it
+                        }
+                    },
+                    label = "SNI (Server Name Indication)",
+                    placeholder = "bug.example.com",
+                    enabled = !isLocked
+                )
+                Spacer(Modifier.height(14.dp))
+            }
+
+            // ── Remote Proxy ──
+            if (showProxy) {
+                SectionHeader("REMOTE PROXY")
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BypNetTextField(
+                        value = proxyHost,
+                        onValueChange = { proxyHost = it; SessionManager.proxyHost = it },
+                        label = "Proxy Host",
+                        placeholder = "proxy.example.com",
+                        modifier = Modifier.weight(2f)
+                    )
+                    BypNetTextField(
+                        value = proxyPort,
+                        onValueChange = { proxyPort = it; SessionManager.proxyPort = it },
+                        label = "Port",
+                        placeholder = "8080",
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Spacer(Modifier.height(14.dp))
+            }
+
+            // ── DNS ──
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 SectionHeader("DNS")
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(Modifier.weight(1f))
+                Switch(
+                    checked = dnsEnabled,
+                    onCheckedChange = { dnsEnabled = it },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Cyan400,
+                        checkedTrackColor = Cyan400.copy(alpha = 0.3f),
+                        uncheckedThumbColor = TextTertiary,
+                        uncheckedTrackColor = DarkCard
+                    ),
+                    modifier = Modifier.height(24.dp)
+                )
+            }
+            if (dnsEnabled) {
+                Spacer(Modifier.height(4.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     BypNetTextField(
                         value = dns1,
-                        onValueChange = { dns1 = it },
+                        onValueChange = { dns1 = it; SessionManager.dns1 = it },
                         label = "DNS 1",
                         placeholder = "8.8.8.8",
                         modifier = Modifier.weight(1f)
                     )
                     BypNetTextField(
                         value = dns2,
-                        onValueChange = { dns2 = it },
+                        onValueChange = { dns2 = it; SessionManager.dns2 = it },
                         label = "DNS 2",
                         placeholder = "8.8.4.4",
                         modifier = Modifier.weight(1f)
                     )
                 }
-                Spacer(modifier = Modifier.height(12.dp))
             }
+            Spacer(Modifier.height(18.dp))
 
-            if (enableSsl) {
-                SectionHeader("SSL/TLS")
-                Spacer(modifier = Modifier.height(4.dp))
-                BypNetTextField(
-                    value = sni,
-                    onValueChange = { sni = it },
-                    label = "SNI (Server Name Indication)",
-                    placeholder = "bug.example.com"
-                )
-                Spacer(modifier = Modifier.height(12.dp))
+            // ── Speed + Timer (visible when connected) ──
+            if (connectionState == ConnectionState.CONNECTED) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = DarkCard),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(0.5.dp, Cyan400.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            // Upload
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Filled.ArrowUpward, null, tint = StatusConnected, modifier = Modifier.size(16.dp))
+                                Text(formatSpeed(uploadSpeed), color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                Text(formatBytes(totalUp), color = TextTertiary, fontSize = 10.sp)
+                            }
+                            // Timer
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Filled.Timer, null, tint = Cyan400, modifier = Modifier.size(16.dp))
+                                Text(formatDuration(elapsedMs), color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                Text("elapsed", color = TextTertiary, fontSize = 10.sp)
+                            }
+                            // Download
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Filled.ArrowDownward, null, tint = Cyan400, modifier = Modifier.size(16.dp))
+                                Text(formatSpeed(downloadSpeed), color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                Text(formatBytes(totalDown), color = TextTertiary, fontSize = 10.sp)
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
             }
 
             // ── Connect / Disconnect Button ──
+            val btnColor = when (connectionState) {
+                ConnectionState.DISCONNECTED -> Cyan400
+                ConnectionState.CONNECTING -> StatusConnecting
+                ConnectionState.CONNECTED -> StatusDisconnected
+            }
             Button(
                 onClick = {
                     when (connectionState) {
                         ConnectionState.DISCONNECTED -> connect()
                         ConnectionState.CONNECTED -> disconnect()
-                        ConnectionState.CONNECTING -> disconnect() // Allow cancelling
+                        ConnectionState.CONNECTING -> disconnect()
                     }
                 },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (connectionState == ConnectionState.DISCONNECTED) Cyan400 else StatusDisconnected,
-                    contentColor = DarkBackground
-                ),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp),
-                enabled = connectionState != ConnectionState.CONNECTING || connectionState == ConnectionState.CONNECTING
+                colors = ButtonDefaults.buttonColors(containerColor = btnColor, contentColor = DarkBackground),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth().height(52.dp)
             ) {
                 if (connectionState == ConnectionState.CONNECTING) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(22.dp),
                         strokeWidth = 2.dp,
                         color = DarkBackground
                     )
                 } else {
                     Icon(
-                        imageVector = if (connectionState == ConnectionState.DISCONNECTED)
-                            Icons.Filled.PlayArrow else Icons.Filled.Stop,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
+                        if (connectionState == ConnectionState.DISCONNECTED) Icons.Filled.PlayArrow else Icons.Filled.Stop,
+                        null, modifier = Modifier.size(22.dp)
                     )
                 }
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(Modifier.width(10.dp))
                 Text(
-                    text = when (connectionState) {
+                    when (connectionState) {
                         ConnectionState.DISCONNECTED -> "CONNECT"
                         ConnectionState.CONNECTING -> "CONNECTING..."
                         ConnectionState.CONNECTED -> "DISCONNECT"
                     },
                     fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp
+                    fontSize = 16.sp
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            // ── Server Info (when connected) ──
+            if (connectionState == ConnectionState.CONNECTED && sshConfig.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    horizontalArrangement = Arrangement.Center,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Box(
+                        modifier = Modifier.size(8.dp).clip(CircleShape).background(StatusConnected)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    val serverHost = sshConfig.split("@").firstOrNull()?.split(":")?.firstOrNull() ?: ""
+                    Text(
+                        "Connected to $serverHost",
+                        color = StatusConnected,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
         }
     }
 }
 
-/**
- * Start the VPN service with the current configuration.
- */
-/**
- * Parse unified SSH config string: ip:port@user:pass
- */
+// ── Helpers ──
+
 private fun parseSshConfig(config: String): Array<String> {
-    // Format: ip:port@user:pass
     val atIndex = config.indexOf('@')
     val serverPart: String
     val credPart: String
@@ -313,36 +453,35 @@ private fun parseSshConfig(config: String): Array<String> {
 
 private fun startVpnService(
     context: android.content.Context,
+    connectionMethod: String,
     sshConfig: String,
     sni: String,
+    proxyHost: String,
+    proxyPort: String,
     dns1: String,
-    dns2: String,
-    enableSsh: Boolean,
-    enableSsl: Boolean
+    dns2: String
 ) {
     val parsed = parseSshConfig(sshConfig)
-    val sshHost = parsed[0]
-    val sshPort = parsed[1]
-    val sshUser = parsed[2]
-    val sshPass = parsed[3]
-
-    val protocol = when {
-        enableSsh -> "SSH"
-        enableSsl -> "SSL"
+    val protocol = when (connectionMethod) {
+        "SSH" -> "SSH"
+        "SSH + SSL" -> "SSH"
+        "SSL/TLS" -> "SSL"
+        "WebSocket" -> "HTTP"
+        "V2Ray" -> "V2RAY"
         else -> "SSH"
     }
 
     val intent = Intent(context, BypNetVpnService::class.java).apply {
         action = BypNetVpnService.ACTION_CONNECT
         putExtra(BypNetVpnService.EXTRA_PROTOCOL, protocol)
-        putExtra(BypNetVpnService.EXTRA_SERVER_HOST, sshHost)
-        putExtra(BypNetVpnService.EXTRA_SERVER_PORT, sshPort.toIntOrNull() ?: 22)
-        putExtra(BypNetVpnService.EXTRA_USERNAME, sshUser)
-        putExtra(BypNetVpnService.EXTRA_PASSWORD, sshPass)
+        putExtra(BypNetVpnService.EXTRA_SERVER_HOST, parsed[0])
+        putExtra(BypNetVpnService.EXTRA_SERVER_PORT, parsed[1].toIntOrNull() ?: 22)
+        putExtra(BypNetVpnService.EXTRA_USERNAME, parsed[2])
+        putExtra(BypNetVpnService.EXTRA_PASSWORD, parsed[3])
         putExtra(BypNetVpnService.EXTRA_SNI, sni)
-        putExtra(BypNetVpnService.EXTRA_PAYLOAD, com.bypnet.app.config.SessionManager.payload)
-        putExtra(BypNetVpnService.EXTRA_PROXY_HOST, com.bypnet.app.config.SessionManager.proxyHost)
-        putExtra(BypNetVpnService.EXTRA_PROXY_PORT, com.bypnet.app.config.SessionManager.proxyPort.toIntOrNull() ?: 8080)
+        putExtra(BypNetVpnService.EXTRA_PAYLOAD, SessionManager.payload)
+        putExtra(BypNetVpnService.EXTRA_PROXY_HOST, proxyHost)
+        putExtra(BypNetVpnService.EXTRA_PROXY_PORT, proxyPort.toIntOrNull() ?: 8080)
         putExtra(BypNetVpnService.EXTRA_DNS1, dns1)
         putExtra(BypNetVpnService.EXTRA_DNS2, dns2)
     }
@@ -354,37 +493,38 @@ private fun startVpnService(
     }
 }
 
+private fun formatSpeed(bps: Long): String = when {
+    bps < 1024 -> "$bps B/s"
+    bps < 1024 * 1024 -> "${"%.1f".format(bps / 1024.0)} KB/s"
+    else -> "${"%.2f".format(bps / (1024.0 * 1024.0))} MB/s"
+}
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes < 1024 -> "$bytes B"
+    bytes < 1024 * 1024 -> "${"%.1f".format(bytes / 1024.0)} KB"
+    bytes < 1024 * 1024 * 1024 -> "${"%.1f".format(bytes / (1024.0 * 1024.0))} MB"
+    else -> "${"%.2f".format(bytes / (1024.0 * 1024.0 * 1024.0))} GB"
+}
+
+private fun formatDuration(millis: Long): String {
+    val s = millis / 1000; val h = s / 3600; val m = (s % 3600) / 60; val sec = s % 60
+    return if (h > 0) "%d:%02d:%02d".format(h, m, sec) else "%02d:%02d".format(m, sec)
+}
+
 @Composable
 fun SectionHeader(title: String) {
-    Text(
-        text = title,
-        color = Cyan400,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = 0.5.sp
-    )
+    Text(title, color = Cyan400, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
 }
 
 @Composable
 fun CompactCheckbox(text: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier
-    ) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = modifier) {
         Checkbox(
             checked = checked,
             onCheckedChange = onCheckedChange,
-            colors = CheckboxDefaults.colors(
-                checkedColor = Cyan400,
-                uncheckedColor = TextTertiary,
-                checkmarkColor = DarkBackground
-            ),
+            colors = CheckboxDefaults.colors(checkedColor = Cyan400, uncheckedColor = TextTertiary, checkmarkColor = DarkBackground),
             modifier = Modifier.size(32.dp)
         )
-        Text(
-            text = text,
-            color = TextPrimary,
-            fontSize = 12.sp
-        )
+        Text(text, color = TextPrimary, fontSize = 12.sp)
     }
 }
