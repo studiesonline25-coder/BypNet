@@ -4,29 +4,29 @@ import com.bypnet.app.tunnel.TunnelConfig
 import com.bypnet.app.tunnel.TunnelEngine
 import com.bypnet.app.tunnel.TunnelStatus
 import com.jcraft.jsch.*
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.withContext
 import java.util.Properties
 
 /**
  * SSH Tunnel Engine using JSch.
  *
- * Replicates HTTP Custom tunneling:
  * 1. Optionally connects through an HTTP proxy via CustomHttpProxy (payload injection)
  * 2. Establishes an SSH session over the proxy socket
- * 3. Sets up SOCKS5 dynamic port forwarding on a local port
- *
- * The VPN service connects to the local SOCKS5 port to route traffic.
+ * 3. Starts a local SOCKS5 proxy that routes through SSH direct-tcpip channels
  */
 class SshEngine : TunnelEngine() {
 
     private var session: Session? = null
-    private var localSocksPort: Int = 0
+    private var socksProxy: LocalSocksProxy? = null
+    private val proxyScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     companion object {
         const val DEFAULT_SSH_PORT = 22
-        private const val CONNECTION_TIMEOUT = 15000 // 15s
-        private const val KEEPALIVE_INTERVAL = 30000 // 30s
+        private const val CONNECTION_TIMEOUT = 15000
+        private const val KEEPALIVE_INTERVAL = 30000
     }
 
     override suspend fun connect(config: TunnelConfig) = withContext(Dispatchers.IO) {
@@ -36,7 +36,6 @@ class SshEngine : TunnelEngine() {
 
             val jsch = JSch()
 
-            // Create session
             val sshSession = jsch.getSession(
                 config.username,
                 config.serverHost,
@@ -71,10 +70,10 @@ class SshEngine : TunnelEngine() {
                 session = sshSession
                 log("SSH session established!", "SUCCESS")
 
-                // Set up dynamic SOCKS5 port forwarding on a random local port
-                // This creates a local SOCKS5 proxy that tunnels all traffic through SSH
-                localSocksPort = sshSession.setPortForwardingD(0)
-                log("SOCKS5 proxy started on 127.0.0.1:$localSocksPort", "SUCCESS")
+                // Start local SOCKS5 proxy that routes through SSH
+                val proxy = LocalSocksProxy(sshSession)
+                proxy.start(proxyScope) { msg, level -> log(msg, level) }
+                socksProxy = proxy
 
                 updateStatus(TunnelStatus.CONNECTED)
             } else {
@@ -92,14 +91,13 @@ class SshEngine : TunnelEngine() {
             updateStatus(TunnelStatus.DISCONNECTING)
             log("Disconnecting SSH session...")
 
+            socksProxy?.stop()
+            socksProxy = null
+
             session?.let {
-                if (it.isConnected) {
-                    try { it.delPortForwardingD(localSocksPort) } catch (_: Exception) {}
-                    it.disconnect()
-                }
+                if (it.isConnected) it.disconnect()
             }
             session = null
-            localSocksPort = 0
 
             log("SSH session disconnected", "SUCCESS")
             updateStatus(TunnelStatus.DISCONNECTED)
@@ -110,7 +108,6 @@ class SshEngine : TunnelEngine() {
 
     /**
      * Get the local SOCKS5 proxy port.
-     * The VPN service uses this to route traffic through the SSH tunnel.
      */
-    fun getLocalSocksPort(): Int = localSocksPort
+    fun getLocalSocksPort(): Int = socksProxy?.port ?: 0
 }
