@@ -69,13 +69,10 @@ fun PayloadEditorScreen() {
             selectedTabIndex = selectedTab,
             containerColor = DarkSurface,
             contentColor = Cyan400,
-            indicator = { tabPositions ->
-                if (selectedTab < tabPositions.size) {
-                    TabRowDefaults.SecondaryIndicator(
-                        modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                        color = Cyan400
-                    )
-                }
+            indicator = {
+                TabRowDefaults.SecondaryIndicator(
+                    color = Cyan400
+                )
             },
             divider = { HorizontalDivider(color = DarkBorder) }
         ) {
