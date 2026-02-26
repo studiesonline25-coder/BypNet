@@ -31,6 +31,7 @@ object PayloadProcessor {
 
         // Standard variables
         result = result.replace("[host]", host, ignoreCase = true)
+        result = result.replace("[host_port]", "$host:$port", ignoreCase = true)
         result = result.replace("[port]", port.toString(), ignoreCase = true)
         result = result.replace("[sni]", sni.ifEmpty { host }, ignoreCase = true)
         result = result.replace("[cookie]", cookies, ignoreCase = true)

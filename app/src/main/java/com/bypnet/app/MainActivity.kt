@@ -87,6 +87,11 @@ fun BypNetMainScaffold(onNavigate: (String) -> Unit) {
         }
     }
 
+    // Export lock dialog state
+    var showExportLockDialog by remember { mutableStateOf(false) }
+    var exportLockPassword by remember { mutableStateOf("") }
+    var exportLockEnabled by remember { mutableStateOf(false) }
+
     // File picker for Export
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
@@ -94,18 +99,76 @@ fun BypNetMainScaffold(onNavigate: (String) -> Unit) {
         uri?.let {
             scope.launch {
                 try {
-                    // Export the current "default" config — in production this would
-                    // serialize the currently active settings from the HomeScreen
-                    val json = BypConfigSerializer.toJson(BypConfig(name = "BypNet Export"))
+                    val config = BypConfig(name = "BypNet Export")
+                    val json = if (exportLockEnabled && exportLockPassword.isNotEmpty()) {
+                        BypConfigSerializer.toLockedJson(config, exportLockPassword)
+                    } else {
+                        BypConfigSerializer.toJson(config)
+                    }
                     context.contentResolver.openOutputStream(it)?.use { os ->
                         os.write(json.toByteArray())
                     }
-                    Toast.makeText(context, "✓ Config exported", Toast.LENGTH_SHORT).show()
+                    val lockMsg = if (exportLockEnabled) " (locked 🔒)" else ""
+                    Toast.makeText(context, "✓ Config exported$lockMsg", Toast.LENGTH_SHORT).show()
+                    exportLockPassword = ""
+                    exportLockEnabled = false
                 } catch (e: Exception) {
                     Toast.makeText(context, "✗ Export failed: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
         }
+    }
+
+    // Lock password dialog before exporting
+    if (showExportLockDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showExportLockDialog = false },
+            containerColor = DarkSurface,
+            title = {
+                Text("Export .byp Config", color = TextPrimary, fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = exportLockEnabled,
+                            onCheckedChange = { exportLockEnabled = it },
+                            colors = CheckboxDefaults.colors(checkedColor = Cyan400)
+                        )
+                        Text("Lock with password", color = TextPrimary, fontSize = 14.sp)
+                    }
+                    if (exportLockEnabled) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = exportLockPassword,
+                            onValueChange = { exportLockPassword = it },
+                            label = { Text("Password", color = TextTertiary) },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Cyan400,
+                                unfocusedBorderColor = DarkBorder,
+                                focusedTextColor = TextPrimary,
+                                unfocusedTextColor = TextPrimary,
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showExportLockDialog = false
+                    exportLauncher.launch("config.byp")
+                }) {
+                    Text("Export", color = Cyan400, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExportLockDialog = false }) {
+                    Text("Cancel", color = TextTertiary)
+                }
+            }
+        )
     }
 
     ModalNavigationDrawer(
@@ -226,7 +289,7 @@ fun BypNetMainScaffold(onNavigate: (String) -> Unit) {
                                 leadingIcon = { Icon(Icons.Filled.Save, null, tint = TextSecondary) },
                                 onClick = {
                                     showMenu = false
-                                    exportLauncher.launch("config.byp")
+                                    showExportLockDialog = true
                                 }
                             )
                         }

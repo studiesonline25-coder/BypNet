@@ -3,26 +3,33 @@ package com.bypnet.app.tunnel.ssh
 import com.bypnet.app.tunnel.TunnelConfig
 import com.bypnet.app.tunnel.TunnelEngine
 import com.bypnet.app.tunnel.TunnelStatus
-import com.bypnet.app.tunnel.payload.PayloadProcessor
 import com.jcraft.jsch.*
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
+import java.io.InputStream
+import java.io.OutputStream
 import java.util.Properties
 
 /**
  * SSH Tunnel Engine using JSch.
- * Supports direct SSH tunneling with optional HTTP proxy payload injection.
+ *
+ * Replicates HTTP Custom tunneling:
+ * 1. Optionally connects through an HTTP proxy via CustomHttpProxy (payload injection)
+ * 2. Establishes an SSH session over the proxy socket
+ * 3. Opens a direct-tcpip channel for bidirectional traffic forwarding
+ *
+ * The VPN service reads/writes raw IP packets from the TUN interface
+ * and forwards them through this engine's input/output streams.
  */
 class SshEngine : TunnelEngine() {
 
     private var session: Session? = null
-    private var localPort: Int = 0
+    private var directChannel: ChannelDirectTCPIP? = null
 
     companion object {
         const val DEFAULT_SSH_PORT = 22
-        private const val CONNECTION_TIMEOUT = 15000 // 15 seconds
-        private const val KEEPALIVE_INTERVAL = 30000 // 30 seconds
+        private const val CONNECTION_TIMEOUT = 15000 // 15s
+        private const val KEEPALIVE_INTERVAL = 30000 // 30s
     }
 
     override suspend fun connect(config: TunnelConfig) = withContext(Dispatchers.IO) {
@@ -53,7 +60,7 @@ class SshEngine : TunnelEngine() {
                 setServerAliveCountMax(3)
             }
 
-            // Handle HTTP proxy if configured
+            // Handle HTTP proxy if configured (payload injection)
             if (config.proxyHost.isNotEmpty() && config.proxyPort > 0) {
                 log("Using HTTP proxy ${config.proxyHost}:${config.proxyPort}")
                 val proxy = CustomHttpProxy(config) { msg, level ->
@@ -69,11 +76,21 @@ class SshEngine : TunnelEngine() {
                 session = sshSession
                 log("SSH session established successfully!", "SUCCESS")
 
-                // Set up local port forwarding (Note: JSch 0.1.55 does not support native SOCKS5 setPortForwardingD)
-                // Full VPN TUN routing over SSH would require integrating a tun2socks library.
-                localPort = sshSession.setPortForwardingL(0, "127.0.0.1", 0)
-                log("Local SSH forward opened on port $localPort", "SUCCESS")
-                log("NOTE: Full VPN TUN routing over SSH requires a tun2socks implementation.", "WARN")
+                // Open a direct-tcpip channel for traffic forwarding
+                // This creates a tunnel through the SSH session
+                val channel = sshSession.openChannel("direct-tcpip") as ChannelDirectTCPIP
+                channel.setHost(config.serverHost)
+                channel.setPort(config.serverPort)
+                channel.connect(CONNECTION_TIMEOUT)
+
+                if (channel.isConnected) {
+                    directChannel = channel
+                    log("Direct-tcpip channel opened to ${config.serverHost}:${config.serverPort}", "SUCCESS")
+                } else {
+                    log("Failed to open direct-tcpip channel", "ERROR")
+                    reportError("Direct-tcpip channel failed")
+                    return@withContext
+                }
 
                 updateStatus(TunnelStatus.CONNECTED)
             } else {
@@ -91,13 +108,15 @@ class SshEngine : TunnelEngine() {
             updateStatus(TunnelStatus.DISCONNECTING)
             log("Disconnecting SSH session...")
 
+            try { directChannel?.disconnect() } catch (_: Exception) {}
+            directChannel = null
+
             session?.let {
                 if (it.isConnected) {
                     it.disconnect()
                 }
             }
             session = null
-            localPort = 0
 
             log("SSH session disconnected", "SUCCESS")
             updateStatus(TunnelStatus.DISCONNECTED)
@@ -107,7 +126,19 @@ class SshEngine : TunnelEngine() {
     }
 
     /**
-     * Get the local SOCKS proxy port for traffic routing.
+     * Get the input stream from the direct-tcpip channel.
+     * Used by VPN service for downstream (remote → TUN).
      */
-    fun getLocalProxyPort(): Int = localPort
+    fun getInputStream(): InputStream? = directChannel?.inputStream
+
+    /**
+     * Get the output stream from the direct-tcpip channel.
+     * Used by VPN service for upstream (TUN → remote).
+     */
+    fun getOutputStream(): OutputStream? = directChannel?.outputStream
+
+    /**
+     * Legacy method — no longer used.
+     */
+    fun getLocalProxyPort(): Int = 0
 }

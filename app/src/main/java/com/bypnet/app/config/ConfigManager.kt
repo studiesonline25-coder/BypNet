@@ -42,15 +42,21 @@ class ConfigManager(private val context: Context) {
 
     /**
      * Import a .byp config file from a URI.
+     * If the file is locked, pass a password to decrypt it.
      */
-    suspend fun importConfig(uri: Uri): BypConfig? {
+    suspend fun importConfig(uri: Uri, password: String? = null): BypConfig? {
         return try {
             val inputStream = context.contentResolver.openInputStream(uri)
             val reader = BufferedReader(InputStreamReader(inputStream))
             val json = reader.readText()
             reader.close()
 
-            val config = BypConfigSerializer.fromJson(json)
+            val config = if (BypConfigSerializer.isLocked(json)) {
+                if (password.isNullOrEmpty()) return null // Caller must prompt for password
+                BypConfigSerializer.fromLockedJson(json, password) ?: return null
+            } else {
+                BypConfigSerializer.fromJson(json)
+            }
 
             // Save to database
             val entity = configToEntity(config)
@@ -69,6 +75,15 @@ class ConfigManager(private val context: Context) {
         val entity = configDao.getConfigById(configId) ?: return null
         val config = entityToConfig(entity)
         return BypConfigSerializer.toJson(config)
+    }
+
+    /**
+     * Export a config as a locked (encrypted) .byp file.
+     */
+    suspend fun exportLockedConfig(configId: Long, password: String): String? {
+        val entity = configDao.getConfigById(configId) ?: return null
+        val config = entityToConfig(entity)
+        return BypConfigSerializer.toLockedJson(config, password)
     }
 
     /**

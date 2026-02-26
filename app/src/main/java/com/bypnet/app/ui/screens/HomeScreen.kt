@@ -38,11 +38,8 @@ fun HomeScreen() {
     // Connection state synced from VPN service
     var connectionState by remember { mutableStateOf(ConnectionState.DISCONNECTED) }
 
-    // SSH Config
-    var sshHost by remember { mutableStateOf("") }
-    var sshPort by remember { mutableStateOf("22") }
-    var sshUser by remember { mutableStateOf("") }
-    var sshPass by remember { mutableStateOf("") }
+    // SSH Config — unified format: ip:port@user:pass
+    var sshConfig by remember { mutableStateOf("") }
 
     // Checkboxes
     var enableSsh by remember { mutableStateOf(true) }
@@ -88,7 +85,7 @@ fun HomeScreen() {
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         // VPN permission granted (or already had it) — start the service
-        startVpnService(context, sshHost, sshPort, sshUser, sshPass, sni, dns1, dns2, enableSsh, enableSsl)
+        startVpnService(context, sshConfig, sni, dns1, dns2, enableSsh, enableSsl)
     }
 
     // Function to start connection
@@ -99,7 +96,7 @@ fun HomeScreen() {
             vpnPermissionLauncher.launch(vpnIntent)
         } else {
             // Already have permission — start directly
-            startVpnService(context, sshHost, sshPort, sshUser, sshPass, sni, dns1, dns2, enableSsh, enableSsl)
+            startVpnService(context, sshConfig, sni, dns1, dns2, enableSsh, enableSsl)
         }
     }
 
@@ -125,37 +122,12 @@ fun HomeScreen() {
             SectionHeader("SSH Configuration")
             Spacer(modifier = Modifier.height(4.dp))
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                BypNetTextField(
-                    value = sshHost,
-                    onValueChange = { sshHost = it },
-                    label = "Host",
-                    placeholder = "0.0.0.0",
-                    modifier = Modifier.weight(2f)
-                )
-                BypNetTextField(
-                    value = sshPort,
-                    onValueChange = { sshPort = it },
-                    label = "Port",
-                    placeholder = "22",
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            Spacer(modifier = Modifier.height(4.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                BypNetTextField(
-                    value = sshUser,
-                    onValueChange = { sshUser = it },
-                    label = "Username",
-                    modifier = Modifier.weight(1f)
-                )
-                BypNetTextField(
-                    value = sshPass,
-                    onValueChange = { sshPass = it },
-                    label = "Password",
-                    modifier = Modifier.weight(1f)
-                )
-            }
+            BypNetTextField(
+                value = sshConfig,
+                onValueChange = { sshConfig = it },
+                label = "SSH",
+                placeholder = "ip:port@username:password"
+            )
             Spacer(modifier = Modifier.height(12.dp))
 
             // ── Options Grid ──
@@ -274,18 +246,45 @@ fun HomeScreen() {
 /**
  * Start the VPN service with the current configuration.
  */
+/**
+ * Parse unified SSH config string: ip:port@user:pass
+ */
+private fun parseSshConfig(config: String): Array<String> {
+    // Format: ip:port@user:pass
+    val atIndex = config.indexOf('@')
+    val serverPart: String
+    val credPart: String
+    if (atIndex >= 0) {
+        serverPart = config.substring(0, atIndex)
+        credPart = config.substring(atIndex + 1)
+    } else {
+        serverPart = config
+        credPart = ""
+    }
+    val hostPort = serverPart.split(":", limit = 2)
+    val host = hostPort.getOrElse(0) { "" }
+    val port = hostPort.getOrElse(1) { "22" }
+    val userPass = credPart.split(":", limit = 2)
+    val user = userPass.getOrElse(0) { "" }
+    val pass = userPass.getOrElse(1) { "" }
+    return arrayOf(host, port, user, pass)
+}
+
 private fun startVpnService(
     context: android.content.Context,
-    sshHost: String,
-    sshPort: String,
-    sshUser: String,
-    sshPass: String,
+    sshConfig: String,
     sni: String,
     dns1: String,
     dns2: String,
     enableSsh: Boolean,
     enableSsl: Boolean
 ) {
+    val parsed = parseSshConfig(sshConfig)
+    val sshHost = parsed[0]
+    val sshPort = parsed[1]
+    val sshUser = parsed[2]
+    val sshPass = parsed[3]
+
     val protocol = when {
         enableSsh -> "SSH"
         enableSsl -> "SSL"

@@ -249,12 +249,13 @@ class BypNetVpnService : VpnService() {
             // Determine how to forward traffic based on engine type
             when (engine) {
                 is SshEngine -> {
-                    val proxyPort = engine.getLocalProxyPort()
-                    if (proxyPort > 0) {
-                        emitLog("Forwarding traffic via SOCKS5 on 127.0.0.1:$proxyPort", "INFO")
-                        forwardViaSocks(tunInput, tunOutput, buffer, proxyPort)
+                    val sshIn = engine.getInputStream()
+                    val sshOut = engine.getOutputStream()
+                    if (sshIn != null && sshOut != null) {
+                        emitLog("Forwarding traffic via SSH direct-tcpip channel", "INFO")
+                        forwardViaStreams(tunInput, tunOutput, buffer, sshIn, sshOut)
                     } else {
-                        emitLog("SSH engine connected but no SOCKS port available", "WARN")
+                        emitLog("SSH engine connected but direct-tcpip streams are null", "WARN")
                         simpleTunForward(tunInput, tunOutput, buffer)
                     }
                 }
