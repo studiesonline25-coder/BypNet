@@ -6,8 +6,6 @@ import com.bypnet.app.tunnel.TunnelStatus
 import com.jcraft.jsch.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.InputStream
-import java.io.OutputStream
 import java.util.Properties
 
 /**
@@ -16,15 +14,14 @@ import java.util.Properties
  * Replicates HTTP Custom tunneling:
  * 1. Optionally connects through an HTTP proxy via CustomHttpProxy (payload injection)
  * 2. Establishes an SSH session over the proxy socket
- * 3. Opens a direct-tcpip channel for bidirectional traffic forwarding
+ * 3. Sets up SOCKS5 dynamic port forwarding on a local port
  *
- * The VPN service reads/writes raw IP packets from the TUN interface
- * and forwards them through this engine's input/output streams.
+ * The VPN service connects to the local SOCKS5 port to route traffic.
  */
 class SshEngine : TunnelEngine() {
 
     private var session: Session? = null
-    private var directChannel: ChannelDirectTCPIP? = null
+    private var localSocksPort: Int = 0
 
     companion object {
         const val DEFAULT_SSH_PORT = 22
@@ -47,14 +44,12 @@ class SshEngine : TunnelEngine() {
             ).apply {
                 setPassword(config.password)
 
-                // Disable strict host key checking for flexibility
                 val properties = Properties().apply {
                     put("StrictHostKeyChecking", "no")
                     put("PreferredAuthentications", "password,keyboard-interactive")
                 }
                 setConfig(properties)
 
-                // Timeouts
                 timeout = CONNECTION_TIMEOUT
                 setServerAliveInterval(KEEPALIVE_INTERVAL)
                 setServerAliveCountMax(3)
@@ -74,23 +69,12 @@ class SshEngine : TunnelEngine() {
 
             if (sshSession.isConnected) {
                 session = sshSession
-                log("SSH session established successfully!", "SUCCESS")
+                log("SSH session established!", "SUCCESS")
 
-                // Open a direct-tcpip channel for traffic forwarding
-                // This creates a tunnel through the SSH session
-                val channel = sshSession.openChannel("direct-tcpip") as ChannelDirectTCPIP
-                channel.setHost(config.serverHost)
-                channel.setPort(config.serverPort)
-                channel.connect(CONNECTION_TIMEOUT)
-
-                if (channel.isConnected) {
-                    directChannel = channel
-                    log("Direct-tcpip channel opened to ${config.serverHost}:${config.serverPort}", "SUCCESS")
-                } else {
-                    log("Failed to open direct-tcpip channel", "ERROR")
-                    reportError("Direct-tcpip channel failed")
-                    return@withContext
-                }
+                // Set up dynamic SOCKS5 port forwarding on a random local port
+                // This creates a local SOCKS5 proxy that tunnels all traffic through SSH
+                localSocksPort = sshSession.setPortForwardingD(0)
+                log("SOCKS5 proxy started on 127.0.0.1:$localSocksPort", "SUCCESS")
 
                 updateStatus(TunnelStatus.CONNECTED)
             } else {
@@ -108,15 +92,14 @@ class SshEngine : TunnelEngine() {
             updateStatus(TunnelStatus.DISCONNECTING)
             log("Disconnecting SSH session...")
 
-            try { directChannel?.disconnect() } catch (_: Exception) {}
-            directChannel = null
-
             session?.let {
                 if (it.isConnected) {
+                    try { it.delPortForwardingD(localSocksPort) } catch (_: Exception) {}
                     it.disconnect()
                 }
             }
             session = null
+            localSocksPort = 0
 
             log("SSH session disconnected", "SUCCESS")
             updateStatus(TunnelStatus.DISCONNECTED)
@@ -126,19 +109,8 @@ class SshEngine : TunnelEngine() {
     }
 
     /**
-     * Get the input stream from the direct-tcpip channel.
-     * Used by VPN service for downstream (remote → TUN).
+     * Get the local SOCKS5 proxy port.
+     * The VPN service uses this to route traffic through the SSH tunnel.
      */
-    fun getInputStream(): InputStream? = directChannel?.inputStream
-
-    /**
-     * Get the output stream from the direct-tcpip channel.
-     * Used by VPN service for upstream (TUN → remote).
-     */
-    fun getOutputStream(): OutputStream? = directChannel?.outputStream
-
-    /**
-     * Legacy method — no longer used.
-     */
-    fun getLocalProxyPort(): Int = 0
+    fun getLocalSocksPort(): Int = localSocksPort
 }

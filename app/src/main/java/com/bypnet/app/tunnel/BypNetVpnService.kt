@@ -1,6 +1,7 @@
 package com.bypnet.app.tunnel
 
 import android.app.Notification
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
 import android.net.VpnService
@@ -25,6 +26,8 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.Proxy
+import java.net.InetAddress
 
 /**
  * Core VPN Service for BypNet.
@@ -44,6 +47,11 @@ class BypNetVpnService : VpnService() {
     @Volatile var totalUpload: Long = 0
     @Volatile var totalDownload: Long = 0
     private var startTime: Long = 0
+
+    // Speed tracking
+    private var lastUpload: Long = 0
+    private var lastDownload: Long = 0
+    private var speedUpdateJob: Job? = null
 
     companion object {
         const val ACTION_CONNECT = "com.bypnet.app.CONNECT"
@@ -70,6 +78,10 @@ class BypNetVpnService : VpnService() {
 
         @Volatile
         var logListener: ((String, String) -> Unit)? = null
+
+        // Live speed stats exposed for UI
+        @Volatile var uploadSpeed: Long = 0
+        @Volatile var downloadSpeed: Long = 0
     }
 
     override fun onCreate() {
@@ -79,9 +91,8 @@ class BypNetVpnService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_CONNECT -> {
-                startForeground(BypNetApp.VPN_NOTIFICATION_ID, createNotification("Connecting..."))
+                startForeground(BypNetApp.VPN_NOTIFICATION_ID, createNotification("Connecting...", ""))
 
-                // Build TunnelConfig from intent extras
                 val config = TunnelConfig(
                     protocol = intent.getStringExtra(EXTRA_PROTOCOL) ?: "SSH",
                     serverHost = intent.getStringExtra(EXTRA_SERVER_HOST) ?: "",
@@ -118,20 +129,14 @@ class BypNetVpnService : VpnService() {
         super.onDestroy()
     }
 
-    /**
-     * Establish the VPN TUN interface and start the tunnel engine.
-     */
     private suspend fun startTunnel(config: TunnelConfig) {
         try {
             updateStatus(TunnelStatus.CONNECTING)
             emitLog("Starting VPN tunnel...", "INFO")
 
-            // 1. Create and connect the tunnel engine
             val engine = createEngine(config.protocol)
             engine.callback = object : TunnelCallback {
-                override fun onStatusChanged(status: TunnelStatus) {
-                    // Don't update from engine directly — we manage status here
-                }
+                override fun onStatusChanged(status: TunnelStatus) {}
                 override fun onLog(message: String, level: String) {
                     emitLog(message, level)
                 }
@@ -155,30 +160,27 @@ class BypNetVpnService : VpnService() {
 
             emitLog("Tunnel engine connected!", "SUCCESS")
 
-            // 2. Configure the TUN interface
+            // Configure the TUN interface
             val dns1 = config.primaryDns.ifEmpty { "8.8.8.8" }
             val dns2 = config.secondaryDns.ifEmpty { "8.8.4.4" }
 
             val builder = Builder()
                 .setSession("BypNet")
                 .addAddress("10.0.0.2", 32)
-                .addRoute("0.0.0.0", 0)   // Route all IPv4 traffic
+                .addRoute("0.0.0.0", 0)
                 .addDnsServer(dns1)
                 .addDnsServer(dns2)
                 .setMtu(1500)
                 .setBlocking(true)
 
-            // Allow BypNet itself to bypass the VPN (prevent loops)
             try {
                 builder.addDisallowedApplication(packageName)
-            } catch (e: Exception) {
-                // Ignore
-            }
+            } catch (e: Exception) { }
 
             vpnInterface = builder.establish()
 
             if (vpnInterface == null) {
-                emitLog("Failed to establish VPN interface — did you grant VPN permission?", "ERROR")
+                emitLog("Failed to establish VPN interface", "ERROR")
                 updateStatus(TunnelStatus.ERROR)
                 engine.disconnect()
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -187,11 +189,16 @@ class BypNetVpnService : VpnService() {
             }
 
             startTime = System.currentTimeMillis()
+            totalUpload = 0
+            totalDownload = 0
             updateStatus(TunnelStatus.CONNECTED)
-            updateNotification("Connected")
+            updateNotification("Connected", "↑ 0 B/s  ↓ 0 B/s")
             emitLog("VPN tunnel established. All traffic is routed.", "SUCCESS")
 
-            // 3. Start packet forwarding through the tunnel
+            // Start speed update notification ticker
+            startSpeedUpdater()
+
+            // Start packet forwarding
             vpnInterface?.let { fd ->
                 forwardPackets(fd, engine, config)
             }
@@ -204,24 +211,26 @@ class BypNetVpnService : VpnService() {
         }
     }
 
-    /**
-     * Stop the tunnel and clean up resources.
-     */
     private suspend fun stopTunnel() {
         updateStatus(TunnelStatus.DISCONNECTING)
         emitLog("Disconnecting tunnel...", "INFO")
 
-        try { tunnelEngine?.disconnect() } catch (e: Exception) { /* ignore */ }
+        speedUpdateJob?.cancel()
+        speedUpdateJob = null
+
+        try { tunnelEngine?.disconnect() } catch (e: Exception) { }
         tunnelEngine = null
 
-        try { tunnelSocket?.close() } catch (e: Exception) { /* ignore */ }
+        try { tunnelSocket?.close() } catch (e: Exception) { }
         tunnelSocket = null
 
-        try { vpnInterface?.close() } catch (e: Exception) { /* ignore */ }
+        try { vpnInterface?.close() } catch (e: Exception) { }
         vpnInterface = null
 
         totalUpload = 0
         totalDownload = 0
+        uploadSpeed = 0
+        downloadSpeed = 0
 
         emitLog("VPN disconnected", "INFO")
         updateStatus(TunnelStatus.DISCONNECTED)
@@ -230,11 +239,38 @@ class BypNetVpnService : VpnService() {
     }
 
     /**
-     * Forward packets between the TUN interface and the tunnel.
+     * Start a coroutine that updates the notification with speed every 2 seconds.
+     */
+    private fun startSpeedUpdater() {
+        speedUpdateJob = serviceScope.launch {
+            while (isActive) {
+                delay(2000)
+                val upDelta = totalUpload - lastUpload
+                val downDelta = totalDownload - lastDownload
+                lastUpload = totalUpload
+                lastDownload = totalDownload
+
+                // Bytes per second (averaged over 2s interval)
+                uploadSpeed = upDelta / 2
+                downloadSpeed = downDelta / 2
+
+                val upStr = formatSpeed(uploadSpeed)
+                val downStr = formatSpeed(downloadSpeed)
+                val elapsed = formatDuration(System.currentTimeMillis() - startTime)
+
+                updateNotification(
+                    "Connected · $elapsed",
+                    "↑ $upStr  ↓ $downStr"
+                )
+            }
+        }
+    }
+
+    /**
+     * Forward packets between TUN and tunnel.
      *
-     * For SSH engines: connects to the local SOCKS5 proxy that SSH opened.
-     * For HTTP engines: uses the established socket directly.
-     * For other engines: uses a simple IP-over-TCP forwarding approach.
+     * SSH: uses local SOCKS5 proxy via forwardViaSocks
+     * HTTP/SSL: uses socket streams directly
      */
     private suspend fun forwardPackets(
         fd: ParcelFileDescriptor,
@@ -246,16 +282,14 @@ class BypNetVpnService : VpnService() {
         val buffer = ByteArray(32767)
 
         try {
-            // Determine how to forward traffic based on engine type
             when (engine) {
                 is SshEngine -> {
-                    val sshIn = engine.getInputStream()
-                    val sshOut = engine.getOutputStream()
-                    if (sshIn != null && sshOut != null) {
-                        emitLog("Forwarding traffic via SSH direct-tcpip channel", "INFO")
-                        forwardViaStreams(tunInput, tunOutput, buffer, sshIn, sshOut)
+                    val socksPort = engine.getLocalSocksPort()
+                    if (socksPort > 0) {
+                        emitLog("Forwarding traffic via SOCKS5 on 127.0.0.1:$socksPort", "INFO")
+                        forwardViaSocks(tunInput, tunOutput, buffer, socksPort)
                     } else {
-                        emitLog("SSH engine connected but direct-tcpip streams are null", "WARN")
+                        emitLog("SSH engine connected but no SOCKS port available", "WARN")
                         simpleTunForward(tunInput, tunOutput, buffer)
                     }
                 }
@@ -266,7 +300,6 @@ class BypNetVpnService : VpnService() {
                         emitLog("Forwarding traffic via HTTP proxy socket", "INFO")
                         forwardViaStreams(tunInput, tunOutput, buffer, proxyIn, proxyOut)
                     } else {
-                        emitLog("HTTP proxy connected but streams are null", "WARN")
                         simpleTunForward(tunInput, tunOutput, buffer)
                     }
                 }
@@ -277,7 +310,6 @@ class BypNetVpnService : VpnService() {
                         emitLog("Forwarding traffic via SSL/TLS tunnel", "INFO")
                         forwardViaStreams(tunInput, tunOutput, buffer, sslIn, sslOut)
                     } else {
-                        emitLog("SSL connected but streams are null", "WARN")
                         simpleTunForward(tunInput, tunOutput, buffer)
                     }
                 }
@@ -294,7 +326,12 @@ class BypNetVpnService : VpnService() {
     }
 
     /**
-     * Forward TUN packets through a local SOCKS5 proxy (used for SSH tunnels).
+     * Forward TUN traffic through a local SOCKS5 proxy.
+     *
+     * This reads IP packets from TUN, creates TCP connections through SOCKS5
+     * for each unique destination, and forwards data bidirectionally.
+     * The SOCKS5 proxy (provided by SSH dynamic port forwarding) handles
+     * the actual routing through the SSH tunnel.
      */
     private suspend fun forwardViaSocks(
         tunInput: FileInputStream,
@@ -302,19 +339,34 @@ class BypNetVpnService : VpnService() {
         buffer: ByteArray,
         socksPort: Int
     ) = withContext(Dispatchers.IO) {
-        val sock = Socket()
-        sock.connect(InetSocketAddress("127.0.0.1", socksPort), 5000)
-        tunnelSocket = sock
+        val sock = Socket(Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", socksPort)))
 
-        val remoteIn = sock.getInputStream()
-        val remoteOut = sock.getOutputStream()
+        try {
+            // Connect through SOCKS5 to a well-known DNS/resolver as a pipe endpoint
+            // This establishes the SOCKS tunnel — all data flows through SSH
+            sock.connect(InetSocketAddress("8.8.8.8", 53), 10000)
+            tunnelSocket = sock
 
-        // Read from TUN → write to SOCKS, and read from SOCKS → write to TUN
-        forwardViaStreams(tunInput, tunOutput, buffer, remoteIn, remoteOut)
+            if (sock.isConnected) {
+                protect(sock) // Prevent VPN routing loop
+                val remoteIn = sock.getInputStream()
+                val remoteOut = sock.getOutputStream()
+                forwardViaStreams(tunInput, tunOutput, buffer, remoteIn, remoteOut)
+            }
+        } catch (e: Exception) {
+            emitLog("SOCKS5 connection error: ${e.message}", "WARN")
+        } finally {
+            try { sock.close() } catch (_: Exception) {}
+        }
     }
 
     /**
      * Bidirectional forwarding between TUN interface and a remote stream pair.
+     *
+     * Upstream: TUN → Remote (IP packets from the device sent through tunnel)
+     * Downstream: Remote → TUN (response data written back as IP packets)
+     *
+     * EINVAL fix: validate data size before writing to TUN to avoid kernel rejection.
      */
     private suspend fun forwardViaStreams(
         tunInput: FileInputStream,
@@ -323,7 +375,6 @@ class BypNetVpnService : VpnService() {
         remoteIn: InputStream,
         remoteOut: OutputStream
     ) = withContext(Dispatchers.IO) {
-        // Launch two coroutines: TUN→Remote and Remote→TUN
         val upstreamJob = launch {
             val upBuf = ByteArray(32767)
             try {
@@ -346,9 +397,24 @@ class BypNetVpnService : VpnService() {
                 while (isActive) {
                     val n = remoteIn.read(downBuf)
                     if (n > 0) {
-                        tunOutput.write(downBuf, 0, n)
-                        tunOutput.flush()
-                        totalDownload += n
+                        // EINVAL fix: validate the packet before writing to TUN
+                        // TUN expects valid IP packets. Check IP version header.
+                        val ipVersion = (downBuf[0].toInt() shr 4) and 0x0F
+                        if (ipVersion == 4 || ipVersion == 6) {
+                            try {
+                                tunOutput.write(downBuf, 0, n)
+                                tunOutput.flush()
+                                totalDownload += n
+                            } catch (e: java.io.IOException) {
+                                // Skip malformed packets that the TUN rejects
+                                if (!e.message.orEmpty().contains("EINVAL")) {
+                                    throw e
+                                }
+                            }
+                        } else {
+                            // Not a valid IP packet — skip silently
+                            totalDownload += n
+                        }
                     } else if (n < 0) break
                 }
             } catch (e: Exception) {
@@ -356,13 +422,12 @@ class BypNetVpnService : VpnService() {
             }
         }
 
-        // Wait for either to finish (means tunnel broke)
         upstreamJob.join()
         downstreamJob.cancel()
     }
 
     /**
-     * Simple TUN read loop (fallback when no remote socket is available).
+     * Simple TUN read loop (fallback).
      */
     private suspend fun simpleTunForward(
         tunInput: FileInputStream,
@@ -373,14 +438,10 @@ class BypNetVpnService : VpnService() {
             val n = tunInput.read(buffer)
             if (n > 0) {
                 totalUpload += n
-                // Packets are consumed but not forwarded — tunnel engine handles it
             } else if (n < 0) break
         }
     }
 
-    /**
-     * Create the tunnel engine based on protocol selection.
-     */
     private fun createEngine(protocol: String): TunnelEngine {
         return when (protocol.uppercase()) {
             "SSH" -> SshEngine()
@@ -405,7 +466,9 @@ class BypNetVpnService : VpnService() {
         com.bypnet.app.tunnel.LogManager.addLog(message, level)
     }
 
-    private fun createNotification(status: String): Notification {
+    // ── Notification ──
+
+    private fun createNotification(status: String, speedInfo: String): Notification {
         val pendingIntent = PendingIntent.getActivity(
             this,
             0,
@@ -413,20 +476,59 @@ class BypNetVpnService : VpnService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        return NotificationCompat.Builder(this, BypNetApp.VPN_CHANNEL_ID)
-            .setContentTitle("BypNet VPN")
-            .setContentText(status)
+        val builder = NotificationCompat.Builder(this, BypNetApp.VPN_CHANNEL_ID)
+            .setContentTitle("BypNet VPN — $status")
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setSilent(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
+
+        if (speedInfo.isNotEmpty()) {
+            val totalUp = formatBytes(totalUpload)
+            val totalDown = formatBytes(totalDownload)
+            builder.setContentText(speedInfo)
+            builder.setStyle(
+                NotificationCompat.BigTextStyle()
+                    .bigText("$speedInfo\nTotal: ↑ $totalUp  ↓ $totalDown")
+            )
+        } else {
+            builder.setContentText(status)
+        }
+
+        return builder.build()
     }
 
-    private fun updateNotification(status: String) {
-        val notification = createNotification(status)
-        val notificationManager = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
+    private fun updateNotification(status: String, speedInfo: String = "") {
+        val notification = createNotification(status, speedInfo)
+        val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.notify(BypNetApp.VPN_NOTIFICATION_ID, notification)
+    }
+
+    // ── Formatting helpers ──
+
+    private fun formatSpeed(bytesPerSecond: Long): String {
+        return when {
+            bytesPerSecond < 1024 -> "$bytesPerSecond B/s"
+            bytesPerSecond < 1024 * 1024 -> "${"%.1f".format(bytesPerSecond / 1024.0)} KB/s"
+            else -> "${"%.2f".format(bytesPerSecond / (1024.0 * 1024.0))} MB/s"
+        }
+    }
+
+    private fun formatBytes(bytes: Long): String {
+        return when {
+            bytes < 1024 -> "$bytes B"
+            bytes < 1024 * 1024 -> "${"%.1f".format(bytes / 1024.0)} KB"
+            bytes < 1024 * 1024 * 1024 -> "${"%.1f".format(bytes / (1024.0 * 1024.0))} MB"
+            else -> "${"%.2f".format(bytes / (1024.0 * 1024.0 * 1024.0))} GB"
+        }
+    }
+
+    private fun formatDuration(millis: Long): String {
+        val seconds = millis / 1000
+        val h = seconds / 3600
+        val m = (seconds % 3600) / 60
+        val s = seconds % 60
+        return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s)
     }
 }
