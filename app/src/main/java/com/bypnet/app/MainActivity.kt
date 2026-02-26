@@ -92,21 +92,21 @@ fun BypNetMainScaffold(onNavigate: (String) -> Unit) {
     var exportLockPassword by remember { mutableStateOf("") }
     var exportLockEnabled by remember { mutableStateOf(false) }
 
-    // File picker for Export
+    // File picker for Export (.byp binary format)
     val exportLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/json")
+        contract = ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri ->
         uri?.let {
             scope.launch {
                 try {
                     val config = BypConfig(name = "BypNet Export")
-                    val json = if (exportLockEnabled && exportLockPassword.isNotEmpty()) {
-                        BypConfigSerializer.toLockedJson(config, exportLockPassword)
+                    val bypBytes = if (exportLockEnabled && exportLockPassword.isNotEmpty()) {
+                        BypConfigSerializer.toLockedByp(config, exportLockPassword)
                     } else {
-                        BypConfigSerializer.toJson(config)
+                        BypConfigSerializer.toByp(config)
                     }
                     context.contentResolver.openOutputStream(it)?.use { os ->
-                        os.write(json.toByteArray())
+                        os.write(bypBytes)
                     }
                     val lockMsg = if (exportLockEnabled) " (locked 🔒)" else ""
                     Toast.makeText(context, "✓ Config exported$lockMsg", Toast.LENGTH_SHORT).show()

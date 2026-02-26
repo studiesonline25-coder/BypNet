@@ -42,20 +42,22 @@ class ConfigManager(private val context: Context) {
 
     /**
      * Import a .byp config file from a URI.
-     * If the file is locked, pass a password to decrypt it.
+     * Reads raw bytes and parses the binary .byp format.
+     * If the file is locked, a password must be provided.
      */
     suspend fun importConfig(uri: Uri, password: String? = null): BypConfig? {
         return try {
-            val inputStream = context.contentResolver.openInputStream(uri)
-            val reader = BufferedReader(InputStreamReader(inputStream))
-            val json = reader.readText()
-            reader.close()
+            val inputStream = context.contentResolver.openInputStream(uri) ?: return null
+            val data = inputStream.readBytes()
+            inputStream.close()
 
-            val config = if (BypConfigSerializer.isLocked(json)) {
+            if (!BypConfigSerializer.isValidByp(data)) return null
+
+            val config = if (BypConfigSerializer.isLocked(data)) {
                 if (password.isNullOrEmpty()) return null // Caller must prompt for password
-                BypConfigSerializer.fromLockedJson(json, password) ?: return null
+                BypConfigSerializer.fromLockedByp(data, password) ?: return null
             } else {
-                BypConfigSerializer.fromJson(json)
+                BypConfigSerializer.fromByp(data) ?: return null
             }
 
             // Save to database
@@ -69,21 +71,21 @@ class ConfigManager(private val context: Context) {
     }
 
     /**
-     * Export a config to JSON string (.byp format).
+     * Export a config to .byp binary format (unlocked).
      */
-    suspend fun exportConfig(configId: Long): String? {
+    suspend fun exportConfig(configId: Long): ByteArray? {
         val entity = configDao.getConfigById(configId) ?: return null
         val config = entityToConfig(entity)
-        return BypConfigSerializer.toJson(config)
+        return BypConfigSerializer.toByp(config)
     }
 
     /**
-     * Export a config as a locked (encrypted) .byp file.
+     * Export a config as a locked .byp binary file.
      */
-    suspend fun exportLockedConfig(configId: Long, password: String): String? {
+    suspend fun exportLockedConfig(configId: Long, password: String): ByteArray? {
         val entity = configDao.getConfigById(configId) ?: return null
         val config = entityToConfig(entity)
-        return BypConfigSerializer.toLockedJson(config, password)
+        return BypConfigSerializer.toLockedByp(config, password)
     }
 
     /**

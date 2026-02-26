@@ -5,9 +5,9 @@ import com.google.gson.GsonBuilder
 import com.google.gson.annotations.SerializedName
 
 /**
- * BypNet configuration model for the .byp config format.
- * This represents a complete tunnel configuration that can be
- * exported/imported as a JSON file with .byp extension.
+ * BypNet configuration model.
+ * Internally serialized via Gson, but stored in the proprietary
+ * .byp binary format — NOT as plain JSON.
  */
 data class BypConfig(
     @SerializedName("version")
@@ -104,121 +104,155 @@ data class ShadowsocksConfig(
 )
 
 /**
- * Utility object for serializing/deserializing .byp configs.
- * Supports optional AES-256 encryption for locked configs.
+ * Serializer for the proprietary .byp binary file format.
+ *
+ * .byp file structure:
+ * ┌──────────────────────────────────────────────────┐
+ * │ Magic: "BYP!" (4 bytes)                         │
+ * │ Format version: 0x01 (1 byte)                   │
+ * │ Flags: 0x00=open, 0x01=locked (1 byte)          │
+ * │ If locked:                                      │
+ * │   Salt (16 bytes)                               │
+ * │   IV   (16 bytes)                               │
+ * │ Payload: GZIP-compressed data                   │
+ * │   (AES-256-CBC encrypted before GZIP if locked) │
+ * └──────────────────────────────────────────────────┘
+ *
+ * This is NOT JSON. Only BypNet can read/write .byp files.
  */
 object BypConfigSerializer {
 
-    private val gson: Gson = GsonBuilder()
-        .setPrettyPrinting()
-        .disableHtmlEscaping()
-        .create()
+    private val gson: Gson = GsonBuilder().disableHtmlEscaping().create()
 
-    /**
-     * Serialize a BypConfig to JSON string.
-     */
-    fun toJson(config: BypConfig): String {
-        return gson.toJson(config)
-    }
+    // .byp binary format constants
+    private val MAGIC = byteArrayOf('B'.code.toByte(), 'Y'.code.toByte(), 'P'.code.toByte(), '!'.code.toByte())
+    private const val FORMAT_VERSION: Byte = 0x01
+    private const val FLAG_OPEN: Byte = 0x00
+    private const val FLAG_LOCKED: Byte = 0x01
 
-    /**
-     * Serialize a BypConfig to a locked (encrypted) .byp file string.
-     * The output is a JSON wrapper: {"locked": true, "data": "<base64-aes-encrypted>"}
-     */
-    fun toLockedJson(config: BypConfig, password: String): String {
-        val plainJson = toJson(config.copy(locked = true, lockPassword = ""))
-        val encrypted = encrypt(plainJson, password)
-        val wrapper = mapOf("locked" to true, "data" to encrypted)
-        return gson.toJson(wrapper)
-    }
-
-    /**
-     * Deserialize a JSON string to BypConfig.
-     * Handles both plain and locked (encrypted) formats.
-     */
-    fun fromJson(json: String): BypConfig {
-        return gson.fromJson(json, BypConfig::class.java)
-    }
-
-    /**
-     * Deserialize a locked .byp file with a password.
-     * Returns null if the password is wrong or decryption fails.
-     */
-    fun fromLockedJson(json: String, password: String): BypConfig? {
-        return try {
-            val wrapper = gson.fromJson(json, Map::class.java)
-            val isLocked = wrapper["locked"] as? Boolean ?: false
-            if (!isLocked) return fromJson(json)
-            val encryptedData = wrapper["data"] as? String ?: return null
-            val decrypted = decrypt(encryptedData, password)
-            fromJson(decrypted)
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    /**
-     * Check if a .byp JSON string represents a locked config.
-     */
-    fun isLocked(json: String): Boolean {
-        return try {
-            val wrapper = gson.fromJson(json, Map::class.java)
-            wrapper["locked"] as? Boolean ?: false
-        } catch (e: Exception) {
-            false
-        }
-    }
-
-    /**
-     * Validate a .byp config JSON string.
-     */
-    fun validate(json: String): Boolean {
-        return try {
-            val config = fromJson(json)
-            config.version > 0 && config.server.host.isNotEmpty()
-        } catch (e: Exception) {
-            false
-        }
-    }
-
-    // ── AES-256 Encryption ──
-
-    private const val ALGORITHM = "AES/CBC/PKCS5Padding"
+    // AES constants
+    private const val AES_ALGORITHM = "AES/CBC/PKCS5Padding"
     private const val KEY_ALGORITHM = "PBKDF2WithHmacSHA256"
     private const val KEY_LENGTH = 256
     private const val ITERATION_COUNT = 65536
     private const val IV_LENGTH = 16
     private const val SALT_LENGTH = 16
 
-    private fun encrypt(plainText: String, password: String): String {
-        val salt = ByteArray(SALT_LENGTH).also { java.security.SecureRandom().nextBytes(it) }
-        val iv = ByteArray(IV_LENGTH).also { java.security.SecureRandom().nextBytes(it) }
-
-        val keySpec = javax.crypto.spec.PBEKeySpec(password.toCharArray(), salt, ITERATION_COUNT, KEY_LENGTH)
-        val factory = javax.crypto.SecretKeyFactory.getInstance(KEY_ALGORITHM)
-        val secretKey = javax.crypto.spec.SecretKeySpec(factory.generateSecret(keySpec).encoded, "AES")
-
-        val cipher = javax.crypto.Cipher.getInstance(ALGORITHM)
-        cipher.init(javax.crypto.Cipher.ENCRYPT_MODE, secretKey, javax.crypto.spec.IvParameterSpec(iv))
-        val encrypted = cipher.doFinal(plainText.toByteArray(Charsets.UTF_8))
-
-        // Combine: salt + iv + encrypted → base64
-        val combined = salt + iv + encrypted
-        return android.util.Base64.encodeToString(combined, android.util.Base64.NO_WRAP)
+    /**
+     * Serialize a BypConfig to .byp binary (unlocked).
+     */
+    fun toByp(config: BypConfig): ByteArray {
+        val json = gson.toJson(config)
+        val compressed = gzipCompress(json.toByteArray(Charsets.UTF_8))
+        val out = java.io.ByteArrayOutputStream()
+        out.write(MAGIC)
+        out.write(FORMAT_VERSION.toInt())
+        out.write(FLAG_OPEN.toInt())
+        out.write(compressed)
+        return out.toByteArray()
     }
 
-    private fun decrypt(base64Data: String, password: String): String {
-        val combined = android.util.Base64.decode(base64Data, android.util.Base64.NO_WRAP)
-        val salt = combined.copyOfRange(0, SALT_LENGTH)
-        val iv = combined.copyOfRange(SALT_LENGTH, SALT_LENGTH + IV_LENGTH)
-        val encrypted = combined.copyOfRange(SALT_LENGTH + IV_LENGTH, combined.size)
+    /**
+     * Serialize a BypConfig to .byp binary (locked with password).
+     */
+    fun toLockedByp(config: BypConfig, password: String): ByteArray {
+        val json = gson.toJson(config.copy(locked = true, lockPassword = ""))
+        val plainBytes = json.toByteArray(Charsets.UTF_8)
 
-        val keySpec = javax.crypto.spec.PBEKeySpec(password.toCharArray(), salt, ITERATION_COUNT, KEY_LENGTH)
+        val salt = ByteArray(SALT_LENGTH).also { java.security.SecureRandom().nextBytes(it) }
+        val iv = ByteArray(IV_LENGTH).also { java.security.SecureRandom().nextBytes(it) }
+        val encrypted = aesEncrypt(plainBytes, password, salt, iv)
+        val compressed = gzipCompress(encrypted)
+
+        val out = java.io.ByteArrayOutputStream()
+        out.write(MAGIC)
+        out.write(FORMAT_VERSION.toInt())
+        out.write(FLAG_LOCKED.toInt())
+        out.write(salt)
+        out.write(iv)
+        out.write(compressed)
+        return out.toByteArray()
+    }
+
+    /**
+     * Deserialize a .byp binary file (unlocked).
+     */
+    fun fromByp(data: ByteArray): BypConfig? {
+        return try {
+            if (!isValidByp(data)) return null
+            if (data[5] == FLAG_LOCKED) return null // Needs password
+            val compressed = data.copyOfRange(6, data.size)
+            val decompressed = gzipDecompress(compressed)
+            gson.fromJson(String(decompressed, Charsets.UTF_8), BypConfig::class.java)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Deserialize a locked .byp binary file with password.
+     */
+    fun fromLockedByp(data: ByteArray, password: String): BypConfig? {
+        return try {
+            if (!isValidByp(data)) return null
+            if (data[5] != FLAG_LOCKED) return fromByp(data)
+            if (data.size < 6 + SALT_LENGTH + IV_LENGTH) return null
+
+            val salt = data.copyOfRange(6, 6 + SALT_LENGTH)
+            val iv = data.copyOfRange(6 + SALT_LENGTH, 6 + SALT_LENGTH + IV_LENGTH)
+            val compressed = data.copyOfRange(6 + SALT_LENGTH + IV_LENGTH, data.size)
+            val encrypted = gzipDecompress(compressed)
+            val decrypted = aesDecrypt(encrypted, password, salt, iv)
+            gson.fromJson(String(decrypted, Charsets.UTF_8), BypConfig::class.java)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** Check if raw data is locked. */
+    fun isLocked(data: ByteArray): Boolean {
+        return isValidByp(data) && data[5] == FLAG_LOCKED
+    }
+
+    /** Check if raw data is a valid .byp file. */
+    fun isValidByp(data: ByteArray): Boolean {
+        return data.size >= 6 &&
+            data[0] == MAGIC[0] && data[1] == MAGIC[1] &&
+            data[2] == MAGIC[2] && data[3] == MAGIC[3] &&
+            data[4] == FORMAT_VERSION
+    }
+
+    // ── GZIP ──
+
+    private fun gzipCompress(data: ByteArray): ByteArray {
+        val bos = java.io.ByteArrayOutputStream()
+        java.util.zip.GZIPOutputStream(bos).use { it.write(data) }
+        return bos.toByteArray()
+    }
+
+    private fun gzipDecompress(data: ByteArray): ByteArray {
+        return java.util.zip.GZIPInputStream(java.io.ByteArrayInputStream(data)).use { it.readBytes() }
+    }
+
+    // ── AES-256-CBC ──
+
+    private fun aesEncrypt(plain: ByteArray, password: String, salt: ByteArray, iv: ByteArray): ByteArray {
+        val key = deriveKey(password, salt)
+        val cipher = javax.crypto.Cipher.getInstance(AES_ALGORITHM)
+        cipher.init(javax.crypto.Cipher.ENCRYPT_MODE, key, javax.crypto.spec.IvParameterSpec(iv))
+        return cipher.doFinal(plain)
+    }
+
+    private fun aesDecrypt(encrypted: ByteArray, password: String, salt: ByteArray, iv: ByteArray): ByteArray {
+        val key = deriveKey(password, salt)
+        val cipher = javax.crypto.Cipher.getInstance(AES_ALGORITHM)
+        cipher.init(javax.crypto.Cipher.DECRYPT_MODE, key, javax.crypto.spec.IvParameterSpec(iv))
+        return cipher.doFinal(encrypted)
+    }
+
+    private fun deriveKey(password: String, salt: ByteArray): javax.crypto.spec.SecretKeySpec {
+        val spec = javax.crypto.spec.PBEKeySpec(password.toCharArray(), salt, ITERATION_COUNT, KEY_LENGTH)
         val factory = javax.crypto.SecretKeyFactory.getInstance(KEY_ALGORITHM)
-        val secretKey = javax.crypto.spec.SecretKeySpec(factory.generateSecret(keySpec).encoded, "AES")
-
-        val cipher = javax.crypto.Cipher.getInstance(ALGORITHM)
-        cipher.init(javax.crypto.Cipher.DECRYPT_MODE, secretKey, javax.crypto.spec.IvParameterSpec(iv))
-        return String(cipher.doFinal(encrypted), Charsets.UTF_8)
+        return javax.crypto.spec.SecretKeySpec(factory.generateSecret(spec).encoded, "AES")
     }
 }
