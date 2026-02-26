@@ -38,8 +38,11 @@ fun HomeScreen() {
     // Connection state synced from VPN service
     var connectionState by remember { mutableStateOf(ConnectionState.DISCONNECTED) }
 
+    // All config is now backed by SessionManager (shared with PayloadEditor, import, etc.)
+    val isLocked = com.bypnet.app.config.SessionManager.configLocked
+
     // SSH Config — unified format: ip:port@user:pass
-    var sshConfig by remember { mutableStateOf("") }
+    var sshConfig by remember { mutableStateOf(com.bypnet.app.config.SessionManager.sshConfig) }
 
     // Checkboxes
     var enableSsh by remember { mutableStateOf(true) }
@@ -52,11 +55,11 @@ fun HomeScreen() {
     var udpCustom by remember { mutableStateOf(false) }
 
     // DNS fields
-    var dns1 by remember { mutableStateOf("8.8.8.8") }
-    var dns2 by remember { mutableStateOf("8.8.4.4") }
+    var dns1 by remember { mutableStateOf(com.bypnet.app.config.SessionManager.dns1) }
+    var dns2 by remember { mutableStateOf(com.bypnet.app.config.SessionManager.dns2) }
 
     // SNI
-    var sni by remember { mutableStateOf("") }
+    var sni by remember { mutableStateOf(com.bypnet.app.config.SessionManager.sni) }
 
     // Listen to VPN service status changes
     DisposableEffect(Unit) {
@@ -118,15 +121,52 @@ fun HomeScreen() {
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
+            // ── Locked Config Banner ──
+            if (isLocked) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Cyan400.copy(alpha = 0.1f))
+                        .border(1.dp, Cyan400.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                        .padding(12.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Lock,
+                        contentDescription = null,
+                        tint = Cyan400,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = "Locked Config" + if (com.bypnet.app.config.SessionManager.configName.isNotEmpty()) 
+                                ": ${com.bypnet.app.config.SessionManager.configName}" else "",
+                            color = Cyan400,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "Config details are hidden. Tap connect to use.",
+                            color = TextTertiary,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
             // ── SSH Configuration ──
             SectionHeader("SSH Configuration")
             Spacer(modifier = Modifier.height(4.dp))
 
             BypNetTextField(
-                value = sshConfig,
-                onValueChange = { sshConfig = it },
+                value = if (isLocked) "••••••••••••••••" else sshConfig,
+                onValueChange = { if (!isLocked) { sshConfig = it; com.bypnet.app.config.SessionManager.sshConfig = it } },
                 label = "SSH",
-                placeholder = "ip:port@username:password"
+                placeholder = "ip:port@username:password",
+                enabled = !isLocked
             )
             Spacer(modifier = Modifier.height(12.dp))
 

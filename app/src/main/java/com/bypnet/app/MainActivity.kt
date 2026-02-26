@@ -79,6 +79,7 @@ fun BypNetMainScaffold(onNavigate: (String) -> Unit) {
             scope.launch {
                 val config = configManager.importConfig(it)
                 if (config != null) {
+                    com.bypnet.app.config.SessionManager.loadConfig(config)
                     Toast.makeText(context, "✓ Imported: ${config.name.ifEmpty { "Config" }}", Toast.LENGTH_SHORT).show()
                 } else {
                     Toast.makeText(context, "✗ Failed to import config", Toast.LENGTH_SHORT).show()

@@ -30,7 +30,8 @@ fun BypNetTextField(
     leadingIcon: ImageVector? = null,
     placeholder: String = "",
     isPassword: Boolean = false,
-    singleLine: Boolean = true
+    singleLine: Boolean = true,
+    enabled: Boolean = true
 ) {
     val shape = RoundedCornerShape(10.dp)
 
@@ -77,13 +78,14 @@ fun BypNetTextField(
                     value = value,
                     onValueChange = onValueChange,
                     textStyle = TextStyle(
-                        color = TextPrimary,
+                        color = if (enabled) TextPrimary else TextTertiary,
                         fontSize = 14.sp
                     ),
                     singleLine = singleLine,
                     cursorBrush = SolidColor(Cyan400),
                     visualTransformation = if (isPassword) PasswordVisualTransformation()
                     else VisualTransformation.None,
+                    enabled = enabled,
                     modifier = Modifier.fillMaxWidth()
                 )
             }
