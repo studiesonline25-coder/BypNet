@@ -56,6 +56,15 @@ class MainActivity : ComponentActivity() {
                     composable("payload_editor") { PayloadEditorScreen() }
                     composable("ip_hunter") { IpHunterScreen() }
                     composable("response_checker") { ResponseCheckerScreen() }
+                    composable("ssh_settings") { SshSettingsScreen() }
+                    composable("vpn_settings") { VpnSettingsScreen() }
+                    composable("sni") { SniScreen() }
+                    composable("dns_custom") { DnsCustomScreen() }
+                    composable("udpgw") { UdpgwScreen() }
+                    composable("short_url") { ShortUrlScreen() }
+                    composable("bnid") { BnidScreen() }
+                    composable("battery_opt") { BatteryOptScreen() }
+                    composable("about") { AboutScreen() }
                 }
             }
         }
@@ -225,25 +234,29 @@ fun BypNetMainScaffold(onNavigate: (String) -> Unit) {
                 }
                 DrawerMenuItem(Icons.Filled.Verified, "SNI") {
                     scope.launch { drawerState.close() }
-                    onNavigate("settings")
+                    onNavigate("sni")
                 }
 
                 // ── Connection ──
                 DrawerSectionHeader("Connection")
                 DrawerMenuItem(Icons.Filled.Sync, "SSH Settings") {
                     scope.launch { drawerState.close() }
-                    onNavigate("settings")
+                    onNavigate("ssh_settings")
                 }
                 DrawerMenuItem(Icons.Filled.VpnKey, "VPN Settings") {
                     scope.launch { drawerState.close() }
-                    onNavigate("settings")
+                    onNavigate("vpn_settings")
                 }
 
                 // ── Tool ──
                 DrawerSectionHeader("Tool")
                 DrawerMenuItem(Icons.Filled.Dns, "DNS Custom") {
                     scope.launch { drawerState.close() }
-                    onNavigate("settings")
+                    onNavigate("dns_custom")
+                }
+                DrawerMenuItem(Icons.Filled.Cable, "UDPGW SSH") {
+                    scope.launch { drawerState.close() }
+                    onNavigate("udpgw")
                 }
                 DrawerMenuItem(Icons.Filled.Code, "Response Checker") {
                     scope.launch { drawerState.close() }
@@ -253,15 +266,25 @@ fun BypNetMainScaffold(onNavigate: (String) -> Unit) {
                     scope.launch { drawerState.close() }
                     onNavigate("ip_hunter")
                 }
+                DrawerMenuItem(Icons.Filled.Link, "ShortUrl Maker") {
+                    scope.launch { drawerState.close() }
+                    onNavigate("short_url")
+                }
                 DrawerMenuItem(Icons.Filled.Public, "Cookie Browser") {
                     scope.launch { drawerState.close() }
                     onNavigate("browser")
                 }
+                DrawerMenuItem(Icons.Filled.Fingerprint, "BNID") {
+                    scope.launch { drawerState.close() }
+                    onNavigate("bnid")
+                }
                 DrawerMenuItem(Icons.Filled.BatteryChargingFull, "Battery Optimization") {
                     scope.launch { drawerState.close() }
+                    onNavigate("battery_opt")
                 }
                 DrawerMenuItem(Icons.Filled.Info, "About") {
                     scope.launch { drawerState.close() }
+                    onNavigate("about")
                 }
             }
         }
