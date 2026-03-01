@@ -208,7 +208,7 @@ fun HomeScreen() {
         // ── JS Challenge Auto-Solver ──
         var autoSolveJs by remember { mutableStateOf(SessionManager.autoSolveJs) }
         Row(modifier = Modifier.fillMaxWidth()) {
-            HcCheckbox("Auto-Solve JS/CAPTCHA", autoSolveJs, { autoSolveJs = it; SessionManager.autoSolveJs = it }, Modifier.weight(1f))
+            HcCheckbox("AutoSolve", autoSolveJs, { autoSolveJs = it; SessionManager.autoSolveJs = it }, Modifier.weight(1f))
         }
 
         Spacer(Modifier.height(16.dp))
