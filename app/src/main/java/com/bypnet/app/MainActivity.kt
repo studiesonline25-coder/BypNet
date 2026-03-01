@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import com.bypnet.app.proxy.ShareNetProxy
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -101,6 +102,9 @@ fun BypNetMainScaffold(onNavigate: (String) -> Unit) {
     // SNI dialog state
     var showSniDialog by remember { mutableStateOf(false) }
     var sniDialogText by remember { mutableStateOf(SessionManager.sni) }
+
+    // ShareNet dialog state
+    var showShareNetDialog by remember { mutableStateOf(false) }
 
     // Destination Ping dialog state
     var showPingDialog by remember { mutableStateOf(false) }
@@ -404,6 +408,51 @@ fun BypNetMainScaffold(onNavigate: (String) -> Unit) {
         )
     }
 
+    // ── SHARENET DIALOG ──
+    if (showShareNetDialog) {
+        var isShareNetOn by remember { mutableStateOf(ShareNetProxy.isRunning) }
+        BasicAlertDialog(
+            onDismissRequest = { showShareNetDialog = false },
+            modifier = Modifier.fillMaxWidth().padding(16.dp)
+        ) {
+            Surface(shape = RoundedCornerShape(12.dp), color = DarkSurface) {
+                Column(modifier = Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("ShareNet (Tethering)", color = StatusConnected, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        "Share your VPN connection with other devices via WiFi Hotspot.",
+                        color = TextPrimary, fontSize = 14.sp
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "1. Turn on Android WiFi Hotspot.\n2. Connect your other device.\n3. Turn on ShareNet below.\n4. Set Proxy on the other device to:\n   IP: 192.168.43.1\n   Port: 7071\n   Type: HTTP or SOCKS5",
+                        color = TextSecondary, fontSize = 13.sp
+                    )
+                    Spacer(Modifier.height(20.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(if (isShareNetOn) "ShareNet is ON" else "ShareNet is OFF", color = TextPrimary, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.weight(1f))
+                        Switch(
+                            checked = isShareNetOn,
+                            onCheckedChange = {
+                                if (it) {
+                                    if (ShareNetProxy.start()) isShareNetOn = true
+                                    else Toast.makeText(context, "Failed to start ShareNet", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    ShareNetProxy.stop()
+                                    isShareNetOn = false
+                                }
+                            },
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = StatusConnected)
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    TextButton(onClick = { showShareNetDialog = false }) { Text("Close", color = TextTertiary) }
+                }
+            }
+        }
+    }
+
     // ── MAIN LAYOUT ──
 
     ModalNavigationDrawer(
@@ -425,9 +474,13 @@ fun BypNetMainScaffold(onNavigate: (String) -> Unit) {
                         Text("v1.0.0", color = TextSecondary, fontSize = 11.sp)
                     }
                 }
-                Spacer(Modifier.height(4.dp))
+                
+                Column(
+                    modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())
+                ) {
+                    Spacer(Modifier.height(4.dp))
 
-                // Simple Maker
+                    // Simple Maker
                 DrawerMenuItem(Icons.Filled.AutoAwesome, "Simple Maker") {
                     scope.launch { drawerState.close() }; onNavigate("simple_maker")
                 }
@@ -479,11 +532,13 @@ fun BypNetMainScaffold(onNavigate: (String) -> Unit) {
                 DrawerMenuItem(Icons.Filled.Fingerprint, "BNID") {
                     scope.launch { drawerState.close() }; onNavigate("bnid")
                 }
-                DrawerMenuItem(Icons.Filled.BatteryChargingFull, "Battery Optimization") {
-                    scope.launch { drawerState.close() }; onNavigate("battery_opt")
-                }
-                DrawerMenuItem(Icons.Filled.Info, "About") {
-                    scope.launch { drawerState.close() }; onNavigate("about")
+                    DrawerMenuItem(Icons.Filled.BatteryChargingFull, "Battery Optimization") {
+                        scope.launch { drawerState.close() }; onNavigate("battery_opt")
+                    }
+                    DrawerMenuItem(Icons.Filled.Info, "About") {
+                        scope.launch { drawerState.close() }; onNavigate("about")
+                    }
+                    Spacer(Modifier.height(16.dp))
                 }
             }
         }
@@ -566,11 +621,7 @@ fun BypNetMainScaffold(onNavigate: (String) -> Unit) {
                                     } },
                                     onClick = {
                                         showMenu = false
-                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                            type = "text/plain"
-                                            putExtra(Intent.EXTRA_TEXT, "Check out BypNet VPN!")
-                                        }
-                                        context.startActivity(Intent.createChooser(shareIntent, "Share"))
+                                        showShareNetDialog = true
                                     }
                                 )
                                 // SSH/VPN Settings →
