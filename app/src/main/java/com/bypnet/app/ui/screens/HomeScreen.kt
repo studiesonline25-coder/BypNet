@@ -394,7 +394,7 @@ fun CaptchaDialog(webView: android.webkit.WebView) {
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 Box(
-                    modifier = Modifier.fillMaxWidth().background(DarkHeader).padding(16.dp),
+                    modifier = Modifier.fillMaxWidth().background(DarkCard).padding(16.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text("Verification Required", color = TextPrimary, fontWeight = FontWeight.Bold)
