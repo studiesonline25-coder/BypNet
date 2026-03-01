@@ -64,6 +64,9 @@ fun VpnSettingsScreen() {
             }
             Spacer(Modifier.height(6.dp))
 
+            var autoSolveJs by remember { mutableStateOf(SessionManager.autoSolveJs) }
+            HcToggle("Auto-Solve JS Challenge (Cloudflare)", autoSolveJs) { autoSolveJs = it; SessionManager.autoSolveJs = it }
+
             HcToggle("Split Tunneling", splitTunnel) { splitTunnel = it; SessionManager.splitTunnel = it }
             HcToggle("Auto-Connect on Boot", autoConnect) { autoConnect = it; SessionManager.autoConnect = it }
 

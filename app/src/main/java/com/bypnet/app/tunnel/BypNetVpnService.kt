@@ -9,6 +9,8 @@ import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
 import com.bypnet.app.BypNetApp
 import com.bypnet.app.MainActivity
+import com.bypnet.app.browser.JsChallengeSolver
+import com.bypnet.app.config.SessionManager
 import com.bypnet.app.tunnel.ssh.SshEngine
 import com.bypnet.app.tunnel.ssl.SslEngine
 import com.bypnet.app.tunnel.http.HttpProxyEngine
@@ -114,8 +116,42 @@ class BypNetVpnService : VpnService() {
             updateStatus(TunnelStatus.CONNECTING)
             emitLog("Starting VPN tunnel...", "INFO")
 
+            var activeConfig = config
+
+            if (SessionManager.autoSolveJs) {
+                emitLog("Auto-Solving JS Challenge in background...", "INFO")
+                val hostToSolve = activeConfig.sni.ifEmpty { activeConfig.serverHost }.substringBefore(":")
+                val url = "http://$hostToSolve/"
+                
+                val solver = JsChallengeSolver(this@BypNetVpnService)
+                val result = solver.solveChallenge(url)
+                
+                if (result.isSuccess) {
+                    emitLog("JS Challenge solved! Extracted cookies.", "SUCCESS")
+                    var newPayload = activeConfig.payload
+                    
+                    if (newPayload.isEmpty()) {
+                        newPayload = com.bypnet.app.tunnel.payload.PayloadProcessor.defaultCookiePayload()
+                    }
+                    
+                    val uaRegex = Regex("User-Agent:.*?\\[crlf\\]", RegexOption.IGNORE_CASE)
+                    if (newPayload.contains(uaRegex)) {
+                        newPayload = newPayload.replace(uaRegex, "User-Agent: ${result.userAgent}[crlf]")
+                    } else if (newPayload.isNotEmpty() && newPayload.contains("[crlf][crlf]")) {
+                        newPayload = newPayload.replace("[crlf][crlf]", "[crlf]User-Agent: ${result.userAgent}[crlf][crlf]")
+                    }
+                    
+                    activeConfig = activeConfig.copy(
+                        cookies = result.cookies,
+                        payload = newPayload
+                    )
+                } else {
+                    emitLog("JS Challenge solver failed or timed out: ${result.errorMessage}", "WARNING")
+                }
+            }
+
             // 1. Create and connect the tunnel engine
-            val engine = createEngine(config.protocol)
+            val engine = createEngine(activeConfig.protocol)
             engine.callback = object : TunnelCallback {
                 override fun onStatusChanged(status: TunnelStatus) {}
                 override fun onLog(message: String, level: String) { emitLog(message, level) }
@@ -124,8 +160,8 @@ class BypNetVpnService : VpnService() {
             }
             tunnelEngine = engine
 
-            emitLog("Connecting ${config.protocol} to ${config.serverHost}:${config.serverPort}...", "INFO")
-            engine.connect(config)
+            emitLog("Connecting ${activeConfig.protocol} to ${activeConfig.serverHost}:${activeConfig.serverPort}...", "INFO")
+            engine.connect(activeConfig)
 
             if (!engine.isConnected()) {
                 emitLog("Tunnel engine failed to connect", "ERROR")

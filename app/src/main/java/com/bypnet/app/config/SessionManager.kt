@@ -50,6 +50,7 @@ object SessionManager {
     var keepAliveInterval by mutableStateOf("60")
     var splitTunnel by mutableStateOf(false)
     var autoConnect by mutableStateOf(false)
+    var autoSolveJs by mutableStateOf(true) // Native JS Auto-Solver
     var udpBufferSize by mutableStateOf("64")
     var udpTx by mutableStateOf("30")
     var udpRx by mutableStateOf("30")
