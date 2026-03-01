@@ -51,7 +51,7 @@ class JsChallengeSolver(private val context: Context) {
                     CookieManager.getInstance().setAcceptCookie(true)
 
                     var isFinished = false
-                    val maxTries = 40 // 40 * 500ms = 20s
+                    var maxTries = 40 // Initial 20s for auto-solve
                     var currentTry = 0
                     val handler = Handler(Looper.getMainLooper())
 
@@ -75,9 +75,15 @@ class JsChallengeSolver(private val context: Context) {
                                     cookies = cookies,
                                     userAgent = webView.settings.userAgentString
                                 )
+                                CaptchaDialogManager.closeCaptcha()
                                 webView.destroy()
                                 if (continuation.isActive) continuation.resume(result)
                                 return
+                            }
+
+                            if (currentTry == 10 && !isFinished) { // After 5s, assume manual CAPTCHA needed
+                                maxTries = 180 // Expand timeout to 90s for human solving
+                                CaptchaDialogManager.showCaptcha(webView)
                             }
 
                             if (currentTry >= maxTries) {
@@ -88,6 +94,7 @@ class JsChallengeSolver(private val context: Context) {
                                     userAgent = webView.settings.userAgentString,
                                     errorMessage = "Timeout waiting for JS clearance cookie."
                                 )
+                                CaptchaDialogManager.closeCaptcha()
                                 webView.destroy()
                                 if (continuation.isActive) continuation.resume(result)
                                 return
@@ -98,11 +105,32 @@ class JsChallengeSolver(private val context: Context) {
                         }
                     }
 
+                    val autoClickerScript = """
+                        (function() {
+                            setInterval(function() {
+                                // Cloudflare Turnstile generic checkbox
+                                var cfCheckbox = document.querySelector('input[type="checkbox"]');
+                                if (cfCheckbox && !cfCheckbox.checked) {
+                                    cfCheckbox.click();
+                                }
+                                
+                                // Alternative Turnstile wrapper click
+                                var turnstileWrapper = document.querySelector('.ctp-checkbox-container');
+                                if (turnstileWrapper) {
+                                    turnstileWrapper.click();
+                                }
+                            }, 1000);
+                        })();
+                    """.trimIndent()
+                    
                     webView.webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {
                             super.onPageFinished(view, url)
                             // Start polling for cookies once the page finishes its initial load
                             handler.post(checkRunnable)
+                            
+                            // Inject auto-clicker script for Cloudflare Turnstile
+                            view?.evaluateJavascript(autoClickerScript, null)
                         }
                     }
                     
@@ -111,6 +139,7 @@ class JsChallengeSolver(private val context: Context) {
                     continuation.invokeOnCancellation {
                         isFinished = true
                         handler.removeCallbacksAndMessages(null)
+                        CaptchaDialogManager.closeCaptcha()
                         webView.destroy()
                     }
 

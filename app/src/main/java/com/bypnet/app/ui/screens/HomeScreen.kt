@@ -28,6 +28,8 @@ import com.bypnet.app.tunnel.BypNetVpnService
 import com.bypnet.app.tunnel.TunnelStatus
 import com.bypnet.app.ui.components.ConnectionState
 import com.bypnet.app.ui.theme.*
+import com.bypnet.app.browser.CaptchaDialogManager
+import androidx.compose.ui.viewinterop.AndroidView
 
 /**
  * HomeScreen — exact replica of HTTP Custom's SSH tab.
@@ -43,6 +45,9 @@ import com.bypnet.app.ui.theme.*
 @Composable
 fun HomeScreen() {
     val context = LocalContext.current
+
+    // ── CAPTCHA Dialog State ──
+    val captchaWebView by CaptchaDialogManager.webViewFlow.collectAsState()
 
     // ── Connection State ──
     var connectionState by remember { mutableStateOf(ConnectionState.DISCONNECTED) }
@@ -257,6 +262,11 @@ fun HomeScreen() {
             }
         }
     }
+
+    // ── CAPTCHA Dialog overlay ──
+    captchaWebView?.let {
+        CaptchaDialog(it)
+    }
 }
 
 // ── HTTP Custom-style Checkbox ──
@@ -368,4 +378,41 @@ private fun formatDuration(millis: Long): String {
 @Composable
 fun SectionHeader(title: String) {
     Text(title, color = Cyan400, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CaptchaDialog(webView: android.webkit.WebView) {
+    BasicAlertDialog(
+        onDismissRequest = { /* Cannot dismiss manually, must solve or disconnect */ },
+        modifier = Modifier.fillMaxWidth().fillMaxHeight(0.8f)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = DarkSurface,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().background(DarkHeader).padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Verification Required", color = TextPrimary, fontWeight = FontWeight.Bold)
+                }
+                
+                // Mount the existing WebView from the background solver
+                AndroidView(
+                    factory = { webView },
+                    modifier = Modifier.weight(1f).fillMaxWidth()
+                )
+                
+                Text(
+                    "Please complete the CAPTCHA above to connect.",
+                    color = TextSecondary,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(16.dp).align(Alignment.CenterHorizontally)
+                )
+            }
+        }
+    }
 }
