@@ -33,50 +33,50 @@ class CustomHttpProxy(
                 outputStream = socketFactory.getOutputStream(socket)
             }
 
-            // Generate payload
-            val payloadString = if (config.payload.isNotEmpty()) {
-                PayloadProcessor.process(
-                    template = config.payload,
-                    host = config.serverHost,
-                    port = config.serverPort,
-                    sni = config.sni,
-                    cookies = config.cookies
-                )
-            } else {
-                PayloadProcessor.process(
-                    template = PayloadProcessor.defaultConnectPayload(),
-                    host = config.serverHost,
-                    port = config.serverPort,
-                    sni = config.sni
-                )
-            }
-
-            logger("Injecting payload to proxy...", "INFO")
-            outputStream?.write(payloadString.toByteArray())
-            outputStream?.flush()
-
-            // If we are connecting to a proxy, we expect HTTP 200.
-            // If Direct Payload without proxy, the SSH server will just send SSH banner directly.
+            // Generate payload (only if using a real HTTP Proxy)
             val isDirectPayload = config.proxyHost == config.serverHost && config.proxyPort == config.serverPort
-            
+
             if (!isDirectPayload) {
+                val payloadString = if (config.payload.isNotEmpty()) {
+                    PayloadProcessor.process(
+                        template = config.payload,
+                        host = config.serverHost,
+                        port = config.serverPort,
+                        sni = config.sni,
+                        cookies = config.cookies
+                    )
+                } else {
+                    PayloadProcessor.process(
+                        template = PayloadProcessor.defaultConnectPayload(),
+                        host = config.serverHost,
+                        port = config.serverPort,
+                        sni = config.sni
+                    )
+                }
+
+                logger("Injecting payload to HTTP proxy...", "INFO")
+                outputStream?.write(payloadString.toByteArray())
+                outputStream?.flush()
+
                 // Read proxy response carefully byte-by-byte so we don't consume the SSH banner
                 val inStream = inputStream ?: throw Exception("InputStream is null")
                 var line = readLineFromStream(inStream)
                 logger("Proxy Response: $line", "SUCCESS")
-                
+
                 if (!line.contains("200") && !line.contains("101")) {
                     throw Exception("Proxy rejected request with status: $line")
                 }
-                
+
                 // Consume all headers until \r\n\r\n
                 while (true) {
                     val header = readLineFromStream(inStream)
                     if (header.isEmpty()) break
                 }
             } else {
-                logger("Direct payload sent, waiting for SSH banner...", "SUCCESS")
-                // Do not read anything; let JSch read the SSH handshake natively.
+                logger("Direct payload connection established, waiting for SSH banner...", "SUCCESS")
+                // In Direct Payload WITHOUT an HTTP proxy, we do NOT inject an HTTP payload upfront.
+                // Doing so would corrupt the SSH protocol handshake and cause "Connection closed by foreign host".
+                // We let JSch handle the native SSH handshake.
             }
         } catch (e: Exception) {
             close()
