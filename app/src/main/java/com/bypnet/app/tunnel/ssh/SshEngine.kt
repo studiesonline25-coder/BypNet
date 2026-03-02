@@ -54,12 +54,23 @@ class SshEngine : TunnelEngine() {
                 setServerAliveCountMax(3)
             }
 
-            // Handle HTTP proxy if configured (payload injection)
-            if (config.proxyHost.isNotEmpty() && config.proxyPort > 0) {
+            val isSsl = config.protocol.equals("SSL", ignoreCase = true) ||
+                        config.protocol.equals("TLS", ignoreCase = true) ||
+                        config.protocol.equals("SSL/TLS", ignoreCase = true)
+
+            // Handle HTTP/SSL proxy if configured
+            if (isSsl) {
+                log("Using SSL/TLS Tunnel mode")
+                val proxy = CustomSslProxy(config) { msg, level -> log(msg, level) }
+                sshSession.setProxy(proxy)
+            } else if (config.proxyHost.isNotEmpty() && config.proxyPort > 0) {
                 log("Using HTTP proxy ${config.proxyHost}:${config.proxyPort}")
-                val proxy = CustomHttpProxy(config) { msg, level ->
-                    log(msg, level)
-                }
+                val proxy = CustomHttpProxy(config) { msg, level -> log(msg, level) }
+                sshSession.setProxy(proxy)
+            } else if (config.payload.isNotEmpty()) {
+                // Direct SSH with payload but without proxy/SSL (e.g. direct SNI injection)
+                log("Using Direct SSH with Payload mode")
+                val proxy = CustomHttpProxy(config.copy(proxyHost = config.serverHost, proxyPort = config.serverPort)) { msg, level -> log(msg, level) }
                 sshSession.setProxy(proxy)
             }
 

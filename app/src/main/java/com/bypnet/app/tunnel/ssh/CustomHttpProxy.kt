@@ -22,10 +22,16 @@ class CustomHttpProxy(
     override fun connect(socketFactory: SocketFactory, host: String, port: Int, timeout: Int) {
         logger("Connecting to HTTP proxy ${config.proxyHost}:${config.proxyPort}...", "INFO")
         try {
-            socket = socketFactory.createSocket(config.proxyHost, config.proxyPort) ?: Socket()
-            socket?.connect(InetSocketAddress(config.proxyHost, config.proxyPort), timeout)
-            inputStream = socket?.inputStream
-            outputStream = socket?.outputStream
+            if (socketFactory == null) {
+                socket = Socket()
+                socket?.connect(InetSocketAddress(config.proxyHost, config.proxyPort), timeout)
+                inputStream = socket?.inputStream
+                outputStream = socket?.outputStream
+            } else {
+                socket = socketFactory.createSocket(config.proxyHost, config.proxyPort)
+                inputStream = socketFactory.getInputStream(socket)
+                outputStream = socketFactory.getOutputStream(socket)
+            }
 
             // Generate payload
             val payloadString = if (config.payload.isNotEmpty()) {
@@ -49,25 +55,50 @@ class CustomHttpProxy(
             outputStream?.write(payloadString.toByteArray())
             outputStream?.flush()
 
-            // Read proxy response
-            val buffer = ByteArray(8192)
-            val bytesRead = inputStream?.read(buffer) ?: -1
-            if (bytesRead > 0) {
-                val response = String(buffer, 0, bytesRead)
-                val statusLine = response.substringBefore("\n").trim()
-                logger("Proxy Response: $statusLine", "SUCCESS")
-
-                // Typically proxy returns HTTP/1.0 200 Connection established
-                if (!response.contains("200") && !response.contains("101")) {
-                    throw Exception("Proxy rejected request with status: $statusLine")
+            // If we are connecting to a proxy, we expect HTTP 200.
+            // If Direct Payload without proxy, the SSH server will just send SSH banner directly.
+            val isDirectPayload = config.proxyHost == config.serverHost && config.proxyPort == config.serverPort
+            
+            if (!isDirectPayload) {
+                // Read proxy response carefully byte-by-byte so we don't consume the SSH banner
+                val inStream = inputStream ?: throw Exception("InputStream is null")
+                var line = readLineFromStream(inStream)
+                logger("Proxy Response: $line", "SUCCESS")
+                
+                if (!line.contains("200") && !line.contains("101")) {
+                    throw Exception("Proxy rejected request with status: $line")
+                }
+                
+                // Consume all headers until \r\n\r\n
+                while (true) {
+                    val header = readLineFromStream(inStream)
+                    if (header.isEmpty()) break
                 }
             } else {
-                throw Exception("Received empty response from HTTP proxy")
+                logger("Direct payload sent, waiting for SSH banner...", "SUCCESS")
+                // Do not read anything; let JSch read the SSH handshake natively.
             }
         } catch (e: Exception) {
             close()
             throw e
         }
+    }
+
+    private fun readLineFromStream(inputStream: InputStream): String {
+        val sb = StringBuilder()
+        var c: Int
+        while (true) {
+            c = inputStream.read()
+            if (c == -1) break
+            if (c == '\n'.code) {
+                if (sb.isNotEmpty() && sb.last() == '\r') {
+                    sb.deleteCharAt(sb.length - 1)
+                }
+                break
+            }
+            sb.append(c.toChar())
+        }
+        return sb.toString()
     }
 
     override fun getInputStream(): InputStream? = inputStream

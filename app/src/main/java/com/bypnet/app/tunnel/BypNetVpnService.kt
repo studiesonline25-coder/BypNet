@@ -282,14 +282,12 @@ class BypNetVpnService : VpnService() {
 
     private fun createEngine(protocol: String): TunnelEngine {
         return when (protocol.uppercase()) {
-            "SSH" -> SshEngine()
-            "SSL", "TLS", "SSL/TLS" -> SslEngine()
-            "HTTP" -> HttpProxyEngine()
+            "SSH", "SSL", "TLS", "SSL/TLS", "HTTP" -> SshEngine()
             "V2RAY", "VMESS", "VLESS" -> V2RayEngine()
             "SHADOWSOCKS", "SS" -> ShadowsocksEngine()
             "WIREGUARD", "WG" -> WireGuardEngine()
             "TROJAN" -> TrojanEngine()
-            else -> HttpProxyEngine()
+            else -> SshEngine()
         }
     }
 
