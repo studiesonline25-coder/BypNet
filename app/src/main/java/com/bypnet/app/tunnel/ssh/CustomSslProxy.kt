@@ -22,7 +22,7 @@ class CustomSslProxy(
     private var inputStream: InputStream? = null
     private var outputStream: OutputStream? = null
 
-    override fun connect(socketFactory: SocketFactory, host: String, port: Int, timeout: Int) {
+    override fun connect(socketFactory: SocketFactory?, host: String, port: Int, timeout: Int) {
         try {
             val sslContext = SSLContext.getInstance("TLS")
             sslContext.init(null, arrayOf(createTrustAllManager()), java.security.SecureRandom())

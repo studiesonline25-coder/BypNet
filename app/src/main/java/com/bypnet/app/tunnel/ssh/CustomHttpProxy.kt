@@ -19,7 +19,7 @@ class CustomHttpProxy(
     private var inputStream: InputStream? = null
     private var outputStream: OutputStream? = null
 
-    override fun connect(socketFactory: SocketFactory, host: String, port: Int, timeout: Int) {
+    override fun connect(socketFactory: SocketFactory?, host: String, port: Int, timeout: Int) {
         logger("Connecting to HTTP proxy ${config.proxyHost}:${config.proxyPort}...", "INFO")
         try {
             if (socketFactory == null) {
